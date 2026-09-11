@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Player } from '@/lib/types';
 import { getRememberedPlayer, rememberPlayer } from '@/lib/localPlayer';
@@ -12,11 +12,12 @@ export default function JoinPanel({
 }: {
   sessionId: string;
   seatedPlayerIds: string[];
-  onJoined: (playerId: string, name: string) => void;
+  onJoined: (playerId: string, name: string, countInLeaderboard: boolean) => void;
 }) {
   const [remembered, setRemembered] = useState<{ id: string; name: string } | null>(null);
   const [roster, setRoster] = useState<Player[]>([]);
   const [newName, setNewName] = useState('');
+  const [countInLeaderboard, setCountInLeaderboard] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -37,16 +38,25 @@ export default function JoinPanel({
 
   async function join(playerId: string, name: string) {
     setBusy(true);
-    await onJoined(playerId, name);
+    await onJoined(playerId, name, countInLeaderboard);
     rememberPlayer(playerId, name);
     setBusy(false);
     setShowPicker(false);
   }
 
+  // Case-insensitive dedupe: if a roster entry already matches this name
+  // exactly (ignoring case/whitespace), reuse it instead of creating a new
+  // duplicate player row for what is really the same person.
   async function joinAsNew() {
     const name = newName.trim();
     if (!name) return;
     setBusy(true);
+    const exactMatch = roster.find((p) => p.name.trim().toLowerCase() === name.toLowerCase());
+    if (exactMatch) {
+      await join(exactMatch.id, exactMatch.name);
+      setBusy(false);
+      return;
+    }
     const { data, error } = await supabase.from('players').insert({ name }).select().single();
     if (!error && data) {
       await join(data.id, data.name);
@@ -60,13 +70,14 @@ export default function JoinPanel({
     return (
       <div className="card mb-4 text-center">
         <p className="mb-3">
-          欢迎回来，<span className="font-semibold">{remembered.name}</span>
+          Welcome back, <span className="font-semibold">{remembered.name}</span>
         </p>
-        <button className="btn-primary" disabled={busy} onClick={() => join(remembered.id, remembered.name)}>
-          确认入座
+        <LeaderboardToggle value={countInLeaderboard} onChange={setCountInLeaderboard} />
+        <button className="btn-primary mt-3" disabled={busy} onClick={() => join(remembered.id, remembered.name)}>
+          Confirm and take a seat
         </button>
         <button className="btn-ghost mt-2" onClick={() => setShowPicker(true)}>
-          不是我，换一个身份
+          Not me — pick a different identity
         </button>
         {showPicker && (
           <RosterPicker
@@ -84,9 +95,10 @@ export default function JoinPanel({
 
   return (
     <div className="card mb-4 text-center">
-      <p className="mb-3">这是你第一次在这台设备打开牌局，点选你的名字入座</p>
-      <button className="btn-primary" onClick={() => setShowPicker(true)}>
-        选择我的身份入座
+      <p className="mb-3">First time on this device — pick your name to take a seat</p>
+      <LeaderboardToggle value={countInLeaderboard} onChange={setCountInLeaderboard} />
+      <button className="btn-primary mt-3" onClick={() => setShowPicker(true)}>
+        Choose my identity
       </button>
       {showPicker && (
         <RosterPicker
@@ -99,6 +111,15 @@ export default function JoinPanel({
         />
       )}
     </div>
+  );
+}
+
+function LeaderboardToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center justify-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-dim)' }}>
+      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
+      Count this session on the leaderboard
+    </label>
   );
 }
 
@@ -117,15 +138,25 @@ function RosterPicker({
   onNew: () => void;
   onClose: () => void;
 }) {
+  const suggestions = useMemo(() => {
+    const q = newName.trim().toLowerCase();
+    if (!q) return [];
+    return roster.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 5);
+  }, [newName, roster]);
+
   return (
     <div className="modal-overlay">
       <div className="modal">
-        <h3 className="font-display text-lg mb-3">选择身份</h3>
+        <h3 className="font-display text-lg mb-3">Choose identity</h3>
         <p className="text-xs mb-2" style={{ color: 'var(--text-dim)' }}>
-          常客名录（点选一键入座）
+          Regulars (tap to take a seat instantly)
         </p>
         <div className="mb-4 flex flex-wrap gap-2">
-          {roster.length === 0 && <span className="text-xs" style={{ color: 'var(--text-dim)' }}>暂无更多常客</span>}
+          {roster.length === 0 && (
+            <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
+              No more regulars yet
+            </span>
+          )}
           {roster.map((p) => (
             <button
               key={p.id}
@@ -139,19 +170,38 @@ function RosterPicker({
         </div>
         <div className="h-px my-3" style={{ background: 'var(--line)' }} />
         <p className="text-xs mb-2" style={{ color: 'var(--text-dim)' }}>
-          或输入新昵称
+          Or type a new name
         </p>
         <input
-          className="field-input mb-3"
+          className="field-input mb-2"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
-          placeholder="输入昵称"
+          placeholder="Type a name"
         />
+        {suggestions.length > 0 && (
+          <div className="mb-3">
+            <p className="text-xs mb-1.5" style={{ color: '#c79a4b' }}>
+              Did you mean one of these? Tap to use it instead of creating a duplicate.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {suggestions.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => onPick(p)}
+                  className="px-3 py-1.5 rounded-full text-sm"
+                  style={{ background: 'rgba(199,154,75,0.15)', border: '1px solid #c79a4b', color: '#c79a4b' }}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <button className="btn-primary mb-2" onClick={onNew}>
-          添加新玩家并入座
+          Add new player and take a seat
         </button>
         <button className="btn-ghost" onClick={onClose}>
-          关闭
+          Close
         </button>
       </div>
     </div>

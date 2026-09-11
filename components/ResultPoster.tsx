@@ -30,7 +30,7 @@ export default function ResultPoster({
     try {
       const dataUrl = await toPng(posterRef.current, { pixelRatio: 2 });
       const link = document.createElement('a');
-      link.download = `战报-${session.location}-${new Date(session.date).toLocaleDateString()}.png`;
+      link.download = `recap-${session.location}-${new Date(session.date).toLocaleDateString()}.png`;
       link.href = dataUrl;
       link.click();
     } catch (e) {
@@ -45,10 +45,10 @@ export default function ResultPoster({
         <div ref={posterRef} className="rounded-2xl p-6" style={{ background: '#0d2b22', border: '1px solid var(--line)' }}>
           <div className="text-center mb-1">
             <div className="font-display text-2xl font-semibold" style={{ color: '#c79a4b' }}>
-              战报
+              Recap
             </div>
             <div className="text-xs mt-1" style={{ color: 'var(--text-dim)' }}>
-              {session.location} · {new Date(session.date).toLocaleDateString()} · 盲注 {session.small_blind}/{session.big_blind}
+              {session.location} · {new Date(session.date).toLocaleDateString()} · Blinds {session.small_blind}/{session.big_blind}
             </div>
           </div>
 
@@ -56,22 +56,22 @@ export default function ResultPoster({
 
           <div className="space-y-2 text-sm leading-7 mb-4">
             <div>
-              🏆 当晚 MVP：<b>{mvp?.name}</b>{' '}
+              🏆 MVP of the night: <b>{mvp?.name}</b>{' '}
               <span className="num" style={{ color: '#7fd39a' }}>{mvp ? fmt(mvp.net ?? 0) : ''}</span>
             </div>
             <div>
-              💸 慈善大亨：<b>{donkey?.name}</b>{' '}
+              💸 Biggest donor: <b>{donkey?.name}</b>{' '}
               <span className="num" style={{ color: '#e58579' }}>{donkey ? fmt(donkey.net ?? 0) : ''}</span>
             </div>
             <div>
-              🏧 ATM 之王：<b>{atm?.name}</b>（加买 {atm?.rebuyCount ?? 0} 次）
+              🏧 ATM of the night: <b>{atm?.name}</b> ({atm?.rebuyCount ?? 0} rebuys)
             </div>
           </div>
 
           <div className="h-px my-4" style={{ background: 'var(--line)' }} />
 
           <div className="text-xs mb-2" style={{ color: 'var(--text-dim)' }}>
-            全员盈亏
+            Everyone's net
           </div>
           {sorted.map((n) => (
             <div key={n.playerId} className="flex items-center justify-between text-sm py-1">
@@ -86,7 +86,7 @@ export default function ResultPoster({
             <>
               <div className="h-px my-4" style={{ background: 'var(--line)' }} />
               <div className="text-xs mb-2" style={{ color: 'var(--text-dim)' }}>
-                最简转账清单
+                Settle up (fewest transfers)
               </div>
               {transfers.map((t, i) => (
                 <div key={i} className="flex items-center justify-between text-sm py-1">
@@ -102,10 +102,10 @@ export default function ResultPoster({
 
         <div className="h-4" />
         <button className="btn-primary mb-2" disabled={saving} onClick={savePoster}>
-          {saving ? '生成中…' : '保存海报图片'}
+          {saving ? 'Generating…' : 'Save recap image'}
         </button>
         <button className="btn-ghost" onClick={onClose}>
-          完成，返回首页
+          Done, back to home
         </button>
       </div>
     </div>

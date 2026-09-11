@@ -11,7 +11,7 @@ export type Session = {
   small_blind: number;
   big_blind: number;
   buy_in: number;
-  host_pin: string | null;
+  host_pin: string;
   status: 'active' | 'finished';
 };
 
@@ -21,6 +21,7 @@ export type Seat = {
   player_id: string;
   cash_out: number | null;
   has_left: boolean;
+  count_in_leaderboard: boolean;
   joined_at: string;
 };
 
@@ -40,6 +41,7 @@ export type PlayerNet = {
   net: number | null;
   left: boolean;
   rebuyCount: number;
+  countInLeaderboard: boolean;
 };
 
 export type Transfer = {

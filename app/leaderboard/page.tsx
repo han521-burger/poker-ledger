@@ -22,22 +22,27 @@ export default function LeaderboardPage() {
     <div>
       <div className="flex items-center justify-between mb-5">
         <Link href="/" className="text-sm" style={{ color: 'var(--text-dim)' }}>
-          ← 首页
+          ← Home
         </Link>
-        <h1 className="font-display text-lg">净胜总榜</h1>
+        <h1 className="font-display text-lg">Leaderboard</h1>
         <span style={{ width: 32 }} />
       </div>
 
       <div className="card">
-        {rows === null && <div className="text-center py-8 text-sm" style={{ color: 'var(--text-dim)' }}>加载中…</div>}
+        {rows === null && <div className="text-center py-8 text-sm" style={{ color: 'var(--text-dim)' }}>Loading…</div>}
         {rows && rows.length === 0 && (
           <div className="text-center py-8 text-sm" style={{ color: 'var(--text-dim)' }}>
-            还没有历史战绩，打完一局后自动生成
+            No results yet — settle a session to populate this
           </div>
         )}
         {rows &&
           rows.map((r, i) => (
-            <div key={r.player_id} className="flex items-center justify-between py-3" style={{ borderBottom: '1px solid var(--line)' }}>
+            <Link
+              key={r.player_id}
+              href={`/player/${r.player_id}`}
+              className="flex items-center justify-between py-3"
+              style={{ borderBottom: '1px solid var(--line)' }}
+            >
               <div className="flex items-center gap-3">
                 <span className="text-sm w-5" style={{ color: 'var(--text-dim)' }}>
                   {i + 1}
@@ -49,10 +54,10 @@ export default function LeaderboardPage() {
                   {fmt(r.net_sum)}
                 </div>
                 <div className="text-xs" style={{ color: 'var(--text-dim)' }}>
-                  {r.games} 局 · 胜率 {r.games ? Math.round((r.wins / r.games) * 100) : 0}%
+                  {r.games} games · {r.games ? Math.round((r.wins / r.games) * 100) : 0}% win rate
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
       </div>
     </div>

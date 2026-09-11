@@ -3,9 +3,13 @@
 import { useState } from 'react';
 
 export default function PinModal({
+  title = 'Enter host PIN',
+  subtitle = 'This is required for every host action.',
   onConfirm,
   onCancel,
 }: {
+  title?: string;
+  subtitle?: string;
   onConfirm: (pin: string) => void;
   onCancel: () => void;
 }) {
@@ -14,9 +18,9 @@ export default function PinModal({
   return (
     <div className="modal-overlay">
       <div className="modal">
-        <h3 className="font-display text-lg mb-4">解锁管账模式</h3>
+        <h3 className="font-display text-lg mb-4">{title}</h3>
         <p className="text-sm mb-3" style={{ color: 'var(--text-dim)' }}>
-          输入房主设置的 4 位 PIN，解锁后本设备可以加买 / 离场 / 结算，直到刷新页面为止。
+          {subtitle}
         </p>
         <input
           className="field-input mb-4"
@@ -26,13 +30,13 @@ export default function PinModal({
           autoFocus
           value={pin}
           onChange={(e) => setPin(e.target.value)}
-          placeholder="4位密码"
+          placeholder="4-digit PIN"
         />
         <button className="btn-primary mb-2" onClick={() => onConfirm(pin)}>
-          确认
+          Confirm
         </button>
         <button className="btn-ghost" onClick={onCancel}>
-          取消
+          Cancel
         </button>
       </div>
     </div>

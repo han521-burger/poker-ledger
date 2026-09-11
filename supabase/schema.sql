@@ -19,6 +19,7 @@ create table if not exists sessions (
   big_blind numeric not null default 2,
   buy_in numeric not null default 200,
   host_pin text,
+  host_token uuid not null default gen_random_uuid(),
   status text not null default 'active' check (status in ('active', 'finished'))
 );
 
@@ -29,6 +30,7 @@ create table if not exists seats (
   player_id uuid not null references players(id) on delete cascade,
   cash_out numeric,
   has_left boolean not null default false,
+  count_in_leaderboard boolean not null default true,
   joined_at timestamptz not null default now(),
   unique (session_id, player_id)
 );
@@ -94,6 +96,8 @@ create policy "public update seats" on seats for update using (true);
 
 create policy "public read buyins" on buy_ins for select using (true);
 create policy "public insert buyins" on buy_ins for insert with check (true);
+create policy "public update buyins" on buy_ins for update using (true);
+create policy "public delete buyins" on buy_ins for delete using (true);
 
 alter table leaderboard enable row level security;
 create policy "public read leaderboard" on leaderboard for select using (true);

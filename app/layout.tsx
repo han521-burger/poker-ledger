@@ -21,8 +21,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: '牌局账本 · Felt & Ledger',
-  description: '德州扑克家局记账与俱乐部战绩追踪',
+  title: 'Poker Ledger · Felt & Ledger',
+  description: 'Home-game poker bankroll tracking and club standings',
 };
 
 export const viewport: Viewport = {
@@ -34,7 +34,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-CN">
+    <html lang="en">
       <body className={`${fraunces.variable} ${plexMono.variable} ${inter.variable} font-sans`}>
         <div className="max-w-[480px] mx-auto px-[18px] pb-20 pt-5">{children}</div>
       </body>

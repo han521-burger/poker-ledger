@@ -11,6 +11,7 @@ import RebuyModal from './RebuyModal';
 import CashoutModal from './CashoutModal';
 import QRModal from './QRModal';
 import ResultPoster from './ResultPoster';
+import BuyInsModal from './BuyInsModal';
 
 type SeatWithName = Seat & { players: { name: string } | null };
 
@@ -20,10 +21,12 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   const [buyIns, setBuyIns] = useState<BuyIn[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [hostUnlocked, setHostUnlocked] = useState(false);
-  const [showPinModal, setShowPinModal] = useState(false);
+  // Every host action re-prompts for the PIN — nothing is remembered across
+  // clicks. `pendingAction` holds the function to run once the PIN checks out.
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [rebuyFor, setRebuyFor] = useState<{ id: string; name: string } | null>(null);
   const [cashoutFor, setCashoutFor] = useState<{ id: string; name: string } | null>(null);
+  const [recordsFor, setRecordsFor] = useState<{ id: string; name: string } | null>(null);
   const [showQR, setShowQR] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -51,8 +54,6 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
     setShareUrl(typeof window !== 'undefined' ? window.location.href : '');
   }, [load]);
 
-  // Realtime: any change to this session's rows re-fetches, so every phone
-  // at the table sees buy-ins / cash-outs update without refreshing.
   useEffect(() => {
     const channel = supabase
       .channel(`session-${sessionId}`)
@@ -78,6 +79,7 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
         net: cashOut == null ? null : cashOut - totalBuyIn,
         left: seat.has_left,
         rebuyCount: seatBuyIns.length,
+        countInLeaderboard: seat.count_in_leaderboard,
       };
     });
   }, [seats, buyIns]);
@@ -87,32 +89,30 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   const totalCashOut = nets.reduce((a, n) => a + (n.cashOut || 0), 0);
   const diff = pot - totalCashOut;
   const balanced = allCashedOut && Math.abs(diff) < 0.01;
-  const needsPin = !!session?.host_pin;
-  const canManage = !needsPin || hostUnlocked;
 
-  async function handleJoin(playerId: string, name: string) {
+  function requirePin(action: () => void) {
+    setPendingAction(() => action);
+  }
+
+  async function handleJoin(playerId: string, name: string, countInLeaderboard: boolean) {
     await supabase.from('seats').insert({
       session_id: sessionId,
       player_id: playerId,
+      count_in_leaderboard: countInLeaderboard,
     });
     await supabase.from('buy_ins').insert({
       session_id: sessionId,
       player_id: playerId,
       amount: session?.buy_in || 0,
     });
-    fireToast(`${name} 已入座`);
+    fireToast(`${name} took a seat`);
     load();
-  }
-
-  function guard(action: () => void) {
-    if (canManage) action();
-    else setShowPinModal(true);
   }
 
   async function doRebuy(playerId: string, amount: number) {
     await supabase.from('buy_ins').insert({ session_id: sessionId, player_id: playerId, amount });
     setRebuyFor(null);
-    fireToast(`加买 ${fmt(amount)}`);
+    fireToast(`Rebuy ${fmt(amount)}`);
     load();
   }
 
@@ -137,8 +137,10 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
 
   async function finishSession() {
     if (!session) return;
-    // Aggregate into the leaderboard view via a lightweight upsert per player.
+    // Only aggregate into the persistent leaderboard for players who opted
+    // in for this session; everyone still shows up in the recap poster below.
     for (const n of nets) {
+      if (!n.countInLeaderboard) continue;
       await supabase.rpc('bump_leaderboard', {
         p_player_id: n.playerId,
         p_net: n.net ?? 0,
@@ -150,8 +152,8 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
     load();
   }
 
-  if (loading) return <div className="text-center py-16 text-sm" style={{ color: 'var(--text-dim)' }}>加载中…</div>;
-  if (!session) return <div className="text-center py-16 text-sm">找不到这场牌局</div>;
+  if (loading) return <div className="text-center py-16 text-sm" style={{ color: 'var(--text-dim)' }}>Loading…</div>;
+  if (!session) return <div className="text-center py-16 text-sm">This session could not be found</div>;
 
   const transfers = simplifyDebts(nets);
   const seatedPlayerIds = seats.map((s) => s.player_id);
@@ -160,10 +162,10 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
     <div>
       <div className="flex items-center justify-between mb-4">
         <Link href="/" className="text-sm" style={{ color: 'var(--text-dim)' }}>
-          ← 首页
+          ← Home
         </Link>
         <button className="btn-small" onClick={() => setShowQR(true)}>
-          分享入座
+          Share join link
         </button>
       </div>
 
@@ -173,30 +175,30 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
 
       <div className="card mb-4 text-center">
         <div className="text-sm mb-2" style={{ color: 'var(--text-dim)' }}>
-          {session.location} · 盲注 {session.small_blind}/{session.big_blind} · 标准买入 {fmt(session.buy_in)}
+          {session.location} · Blinds {session.small_blind}/{session.big_blind} · Standard buy-in {fmt(session.buy_in)}
         </div>
         <div className="text-xs mb-1" style={{ color: 'var(--text-dim)' }}>
-          当前池底总额
+          Current pot
         </div>
         <div className="text-4xl font-semibold num" style={{ color: '#c79a4b' }}>
           {fmt(pot)}
         </div>
-        {needsPin && !hostUnlocked && session.status === 'active' && (
-          <button className="btn-ghost mt-3" onClick={() => setShowPinModal(true)}>
-            🔒 解锁管账模式
-          </button>
-        )}
-        {hostUnlocked && <div className="text-xs mt-3" style={{ color: '#c79a4b' }}>✓ 管账模式已解锁</div>}
       </div>
 
       <div className="card mb-4">
         {seats.length === 0 && (
           <div className="text-center py-8 text-sm" style={{ color: 'var(--text-dim)' }}>
-            还没有玩家，扫码分享或上方入座
+            No players yet — share the join link or scan the QR code above
+          </div>
+        )}
+        {seats.length > 0 && session.status === 'active' && (
+          <div className="text-xs mb-3 text-center" style={{ color: 'var(--text-dim)' }}>
+            Rebuy / cash out / settle require the host PIN, every time
           </div>
         )}
         {seats.map((seat) => {
           const n = nets.find((x) => x.playerId === seat.player_id)!;
+          const seatBuyIns = buyIns.filter((b) => b.player_id === seat.player_id);
           return (
             <div key={seat.id} className="flex items-center justify-between py-3" style={{ borderBottom: '1px solid var(--line)' }}>
               <div className="flex items-center gap-3">
@@ -211,35 +213,43 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
                     {n.name}{' '}
                     {seat.has_left ? (
                       <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(181,68,58,0.2)', color: '#e8a89f' }}>
-                        已离场
+                        left
                       </span>
                     ) : (
                       <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(199,154,75,0.2)', color: '#c79a4b' }}>
-                        在场
+                        active
+                      </span>
+                    )}
+                    {!seat.count_in_leaderboard && (
+                      <span className="text-xs px-2 py-0.5 rounded-full ml-1" style={{ background: 'rgba(47,95,122,0.25)', color: '#8fb8d1' }}>
+                        not on leaderboard
                       </span>
                     )}
                   </div>
                   <div className="text-xs num" style={{ color: 'var(--text-dim)' }}>
-                    买入 {fmt(n.totalBuyIn)}
-                    {n.cashOut != null ? ` · 带走 ${fmt(n.cashOut)}` : ''}
+                    Bought in {fmt(n.totalBuyIn)}
+                    {n.cashOut != null ? ` · cashed out ${fmt(n.cashOut)}` : ''}
                   </div>
                 </div>
               </div>
               {session.status === 'active' && (
-                <div className="flex gap-1.5">
+                <div className="flex gap-1.5 flex-wrap justify-end">
+                  <button className="btn-small" onClick={() => requirePin(() => setRecordsFor({ id: seat.player_id, name: n.name }))}>
+                    Records
+                  </button>
                   {!seat.has_left && (
-                    <button className="btn-small" onClick={() => guard(() => setRebuyFor({ id: seat.player_id, name: n.name }))}>
-                      +加买
+                    <button className="btn-small" onClick={() => requirePin(() => setRebuyFor({ id: seat.player_id, name: n.name }))}>
+                      + Rebuy
                     </button>
                   )}
                   {!seat.has_left && (
-                    <button className="btn-small" onClick={() => guard(() => setCashoutFor({ id: seat.player_id, name: n.name }))}>
-                      离场
+                    <button className="btn-small" onClick={() => requirePin(() => setCashoutFor({ id: seat.player_id, name: n.name }))}>
+                      Cash out
                     </button>
                   )}
                   {seat.has_left && (
-                    <button className="btn-small" onClick={() => guard(() => undoCashout(seat.player_id))}>
-                      撤销
+                    <button className="btn-small" onClick={() => requirePin(() => undoCashout(seat.player_id))}>
+                      Undo
                     </button>
                   )}
                 </div>
@@ -261,12 +271,12 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
             <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: balanced ? '#5fbf7f' : '#e05c4d' }} />
             {allCashedOut
               ? balanced
-                ? '平账 ✓ 可以结算'
-                : `差额 ${fmt(diff)}，请核对流水`
-              : `等待所有人清点离场筹码（还差 ${seats.filter((s) => s.cash_out == null).length} 人）`}
+                ? 'Balanced ✓ ready to settle'
+                : `Off by ${fmt(diff)} — double check the log`
+              : `Waiting on everyone to cash out (${seats.filter((s) => s.cash_out == null).length} left)`}
           </div>
-          <button className="btn-primary" disabled={!balanced} onClick={() => guard(finishSession)}>
-            生成清算与战报
+          <button className="btn-primary" disabled={!balanced} onClick={() => requirePin(finishSession)}>
+            Settle and generate recap
           </button>
         </div>
       )}
@@ -274,26 +284,26 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
       {session.status === 'finished' && (
         <div className="card mb-4 text-center">
           <div className="mb-3" style={{ color: 'var(--text-dim)' }}>
-            这场牌局已结算完成
+            This session has been settled
           </div>
           <button className="btn-primary" onClick={() => setShowResult(true)}>
-            查看战报
+            View recap
           </button>
         </div>
       )}
 
-      {showPinModal && (
+      {pendingAction && (
         <PinModal
           onConfirm={(pin) => {
             if (pin === session.host_pin) {
-              setHostUnlocked(true);
-              setShowPinModal(false);
-              fireToast('管账模式已解锁');
+              const action = pendingAction;
+              setPendingAction(null);
+              action();
             } else {
-              fireToast('PIN 错误');
+              fireToast('Incorrect PIN');
             }
           }}
-          onCancel={() => setShowPinModal(false)}
+          onCancel={() => setPendingAction(null)}
         />
       )}
 
@@ -311,6 +321,15 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
           playerName={cashoutFor.name}
           onConfirm={(amt) => doCashout(cashoutFor.id, amt)}
           onCancel={() => setCashoutFor(null)}
+        />
+      )}
+
+      {recordsFor && (
+        <BuyInsModal
+          playerName={recordsFor.name}
+          buyIns={buyIns.filter((b) => b.player_id === recordsFor.id)}
+          onChanged={load}
+          onClose={() => setRecordsFor(null)}
         />
       )}
 

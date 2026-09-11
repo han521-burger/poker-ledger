@@ -9,7 +9,7 @@ export default function QRModal({ url, onClose }: { url: string; onClose: () => 
   return (
     <div className="modal-overlay">
       <div className="modal text-center">
-        <h3 className="font-display text-lg mb-4">扫码或分享链接入座</h3>
+        <h3 className="font-display text-lg mb-4">Scan or share the link to join</h3>
         <div className="bg-cream inline-block p-4 rounded-xl mb-4">
           <QRCodeSVG value={url} size={220} bgColor="#f1e8d6" fgColor="#0d2b22" />
         </div>
@@ -31,10 +31,10 @@ export default function QRModal({ url, onClose }: { url: string; onClose: () => 
             }
           }}
         >
-          {copied ? '已复制 ✓' : '复制链接'}
+          {copied ? 'Copied ✓' : 'Copy link'}
         </button>
         <button className="btn-ghost" onClick={onClose}>
-          关闭
+          Close
         </button>
       </div>
     </div>

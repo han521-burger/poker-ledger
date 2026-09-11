@@ -13,6 +13,7 @@ export default function HomePage() {
   const [buyIn, setBuyIn] = useState('200');
   const [location, setLocation] = useState('');
   const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState('');
   const [creating, setCreating] = useState(false);
   const [recent, setRecent] = useState<Session[]>([]);
 
@@ -27,6 +28,11 @@ export default function HomePage() {
   }, []);
 
   async function createSession() {
+    if (!/^\d{4}$/.test(pin)) {
+      setPinError('Enter a 4-digit PIN to start a session');
+      return;
+    }
+    setPinError('');
     setCreating(true);
     const { data, error } = await supabase
       .from('sessions')
@@ -34,8 +40,8 @@ export default function HomePage() {
         small_blind: parseFloat(sb) || 1,
         big_blind: parseFloat(bb) || 2,
         buy_in: parseFloat(buyIn) || 200,
-        location: location || '未命名地点',
-        host_pin: pin || null,
+        location: location || 'Unnamed location',
+        host_pin: pin,
         status: 'active',
       })
       .select()
@@ -50,47 +56,48 @@ export default function HomePage() {
     <div>
       <header className="flex items-baseline justify-between pb-4 mb-5" style={{ borderBottom: '1px solid var(--line)' }}>
         <div>
-          <div className="font-display text-2xl font-semibold">牌局账本</div>
+          <div className="font-display text-2xl font-semibold">Poker Ledger</div>
           <div className="text-xs mt-0.5" style={{ color: 'var(--text-dim)' }}>
-            FELT &amp; LEDGER · 常客共享账本
+            FELT &amp; LEDGER · shared home-game bankroll
           </div>
         </div>
-        <Link href="/leaderboard" className="text-sm" style={{ color: 'var(--text-dim)' }}>
-          排行榜 →
-        </Link>
+        <div className="flex flex-col items-end gap-1 text-sm" style={{ color: 'var(--text-dim)' }}>
+          <Link href="/leaderboard">Leaderboard →</Link>
+          <Link href="/history">History →</Link>
+        </div>
       </header>
 
       <div className="card mb-4">
-        <h2 className="font-display text-lg mb-4">开一局新牌局</h2>
+        <h2 className="font-display text-lg mb-4">Start a new session</h2>
         <div className="flex gap-2.5 mb-3.5">
           <div className="flex-1">
             <label className="block text-xs mb-1.5" style={{ color: 'var(--text-dim)' }}>
-              小盲
+              Small blind
             </label>
             <input className="field-input" type="number" value={sb} onChange={(e) => setSb(e.target.value)} />
           </div>
           <div className="flex-1">
             <label className="block text-xs mb-1.5" style={{ color: 'var(--text-dim)' }}>
-              大盲
+              Big blind
             </label>
             <input className="field-input" type="number" value={bb} onChange={(e) => setBb(e.target.value)} />
           </div>
         </div>
         <div className="mb-3.5">
           <label className="block text-xs mb-1.5" style={{ color: 'var(--text-dim)' }}>
-            标准买入金额
+            Standard buy-in
           </label>
           <input className="field-input" type="number" value={buyIn} onChange={(e) => setBuyIn(e.target.value)} />
         </div>
         <div className="mb-3.5">
           <label className="block text-xs mb-1.5" style={{ color: 'var(--text-dim)' }}>
-            地点
+            Location
           </label>
-          <input className="field-input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="老王家" />
+          <input className="field-input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Mike's place" />
         </div>
         <div className="mb-4">
           <label className="block text-xs mb-1.5" style={{ color: 'var(--text-dim)' }}>
-            管账人 PIN（4位，可留空）
+            Host PIN (4 digits, required — you'll enter this every time you rebuy, cash someone out, or settle)
           </label>
           <input
             className="field-input"
@@ -98,26 +105,30 @@ export default function HomePage() {
             inputMode="numeric"
             maxLength={4}
             value={pin}
-            onChange={(e) => setPin(e.target.value)}
+            onChange={(e) => {
+              setPin(e.target.value);
+              setPinError('');
+            }}
             placeholder="1234"
           />
+          {pinError && (
+            <div className="text-xs mt-1.5" style={{ color: '#e58579' }}>
+              {pinError}
+            </div>
+          )}
         </div>
         <button className="btn-primary" disabled={creating} onClick={createSession}>
-          {creating ? '创建中…' : '开局并生成入座二维码'}
+          {creating ? 'Creating…' : 'Start session and generate join QR code'}
         </button>
       </div>
 
       {recent.length > 0 && (
         <div className="card">
           <div className="text-xs mb-2.5" style={{ color: 'var(--text-dim)' }}>
-            最近战报
+            Recent recaps
           </div>
           {recent.map((s) => (
-            <Link
-              key={s.id}
-              href={`/session/${s.id}`}
-              className="flex items-center justify-between py-1.5 text-sm"
-            >
+            <Link key={s.id} href={`/session/${s.id}`} className="flex items-center justify-between py-1.5 text-sm">
               <span>
                 {s.location} · {s.small_blind}/{s.big_blind}
               </span>

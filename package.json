@@ -14,7 +14,8 @@
     "react-dom": "18.3.1",
     "@supabase/supabase-js": "2.45.4",
     "qrcode.react": "3.1.0",
-    "html-to-image": "1.11.11"
+    "html-to-image": "1.11.11",
+    "recharts": "2.12.7"
   },
   "devDependencies": {
     "typescript": "5.5.4",

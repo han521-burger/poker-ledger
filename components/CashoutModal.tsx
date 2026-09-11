@@ -16,14 +16,14 @@ export default function CashoutModal({
   return (
     <div className="modal-overlay">
       <div className="modal">
-        <h3 className="font-display text-lg mb-4">{playerName} · 清点离场筹码</h3>
+        <h3 className="font-display text-lg mb-4">{playerName} · Cash out</h3>
         <input
           className="field-input mb-4"
           type="number"
           autoFocus
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          placeholder="桌上剩余筹码"
+          placeholder="Chips remaining on the table"
         />
         <button
           className="btn-primary mb-2"
@@ -32,10 +32,10 @@ export default function CashoutModal({
             if (!isNaN(v) && v >= 0) onConfirm(v);
           }}
         >
-          确认离场
+          Confirm cash out
         </button>
         <button className="btn-ghost" onClick={onCancel}>
-          取消
+          Cancel
         </button>
       </div>
     </div>

@@ -78,20 +78,25 @@ Vercel 会自动检测到 GitHub 有新提交，自动重新构建部署，不�
 
 ```
 app/
-  page.tsx                首页：开新局表单
-  session/[id]/page.tsx   牌局详情页路由
-  leaderboard/page.tsx    排行榜
+  page.tsx                Home: start-session form
+  session/[id]/page.tsx   Session route
+  leaderboard/page.tsx    Leaderboard
+  history/page.tsx        All settled sessions
+  player/[id]/page.tsx    Per-player net trend chart + session list
 components/
-  SessionView.tsx         牌局主看板（实时同步核心逻辑）
-  JoinPanel.tsx            自助入座（常客名录 + 本地设备记忆）
+  SessionView.tsx         Main session board (realtime sync core logic)
+  JoinPanel.tsx            Self-serve join (regulars roster + local device memory)
+  BuyInsModal.tsx           Host: view/edit/void a player's buy-in records
   RebuyModal / CashoutModal / PinModal / QRModal / ResultPoster
 lib/
-  supabase.ts             Supabase 客户端
-  settlement.ts            最简转账路径算法（债务简化）
-  localPlayer.ts            本地设备记忆（localStorage）
-  types.ts                  类型定义
+  supabase.ts             Supabase client
+  settlement.ts            Debt-simplification algorithm
+  localPlayer.ts            Local device memory (localStorage)
+  types.ts                  Shared types
 supabase/
-  schema.sql               数据库建表 + 权限策略脚本
+  schema.sql               Fresh-install table + policy script
+  migration_002_*.sql       Incremental migration (host_token)
+  migration_003_*.sql       Incremental migration (leaderboard opt-out + buy-in edit policies)
 ```
 
 ## 和最初方案的对应关系
@@ -102,8 +107,45 @@ supabase/
 - **社交战报海报**：`components/ResultPoster.tsx`，用 `html-to-image` 把结算结果渲染成可保存的图片。
 - **全赛季排行榜**：`leaderboard` 表 + `bump_leaderboard()` 数据库函数，在每局结算时原子性累加净胜负与胜率。
 
+## 权限模型（这一版）
+
+现在是**房主每一次操作都要重新输入 PIN**，不会被记住：
+
+- 开局时 PIN 是必填的（4 位数字），不设 PIN 不能开局。
+- 加买、离场、撤销、查看/修改加买记录、结算 —— 每一次点击都会弹出 PIN 输入框，只有这一次输对了才会执行这一次操作。
+- 这样即使多个人手机上都能看到这些按钮，没有 PIN 也点不动任何一步。
+
+**已知的安全边界**：这套校验是纯前端拿输入值跟 `sessions.host_pin` 明文比对，PIN 本身会随着牌局数据一起被所有访问者的浏览器读到（在开发者工具的网络请求里能看到明文）。对朋友局这种信任场景够用，但不是银行级安全——不要用你其他账户也在用的密码当这个 PIN。
+
+## 排行榜隐私开关
+
+入座时每个人可以自己选"这一局要不要算进排行榜"（默认勾选算进去）。不勾选的话：
+- 这一局结算后不会累加进 `leaderboard` 聚合表，別人在排行榜上完全看不到这个人这一局的数据。
+- 这一局的桌面看板上会给这个人标一个"not on leaderboard"的小标签（只有当场的人能看到，排行榜和历史列表不受影响）。
+- 个人战绩走势图（`/player/[id]`）只统计这个人勾选了"算入排行榜"的场次。
+
+## 房主可以修改/撤销加买记录
+
+每个玩家的座位旁边有个 **Records** 按钮（同样需要 PIN），点开能看到这个人这一局所有的加买记录，每一笔都能改金额或直接撤销——用来修正按错数字之类的失误。
+
+## 个人历史走势图 + 牌局历史列表
+
+- 排行榜上点名字，能看到这个人的历史场次列表 + 累计净胜负折线图（`/player/[id]`）。
+- 首页有一个"History"入口（`/history`），列出所有已结算的牌局，点进去能看到完整战报。
+
+## 防重名入座
+
+入座时如果输入的新名字跟名录里已有的人只是大小写/空格不一样，系统会自动识别成同一个人，不会建重复档案；如果只是相似但不完全一样，会弹出"你是不是想选这个人"的建议供点选，减少同一个人被记成好几个不同名字的情况。
+
+## 数据库迁移（老项目适用）
+
+如果你是**已经跑过一次 schema.sql 的老项目**（比如你现在部署的这套），不需要重跑整个 schema.sql，依次跑这两段增量脚本就够了：
+
+1. `supabase/migration_002_host_token.sql`（如果之前已经跑过可以跳过）
+2. `supabase/migration_003_leaderboard_opt_out_and_buyin_edits.sql`（这次新加的，一定要跑）
+
 ## 已知限制 / 后续可以加强的地方
 
 - 房主 PIN 目前是明文存在 `sessions.host_pin` 字段里，够用但不是银行级安全；如果介意，可以后续改成哈希存储。
 - 数据库权限（RLS）目前是"知道链接就能读写"的轻量模式，没有账号登录系统，适合朋友局场景；如果以后要做成对外开放的俱乐部工具，需要加真正的用户认证。
-- 个人历史盈亏折线图（原方案提到的"点开个人名字看专属走势图"）这一版还没做，可以作为下一步迭代。
+- 重名检测目前只做大小写/空格容错 + 相似建议，没有"合并两个已存在的重复档案"的管理工具，如果名录里已经攒了重复的人，需要手动去 Supabase 后台清理。
