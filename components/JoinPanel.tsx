@@ -1,9 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Player } from '@/lib/types';
 import { getRememberedPlayer, rememberPlayer } from '@/lib/localPlayer';
+import PlayerAvatar from './PlayerAvatar';
+
+type Identity = { id: string; name: string; avatar: string | null; fromAccount: boolean };
 
 export default function JoinPanel({
   sessionId,
@@ -14,15 +18,41 @@ export default function JoinPanel({
   seatedPlayerIds: string[];
   onJoined: (playerId: string, name: string, countInLeaderboard: boolean) => void;
 }) {
-  const [remembered, setRemembered] = useState<{ id: string; name: string } | null>(null);
+  const [remembered, setRemembered] = useState<Identity | null>(null);
+  const [resolved, setResolved] = useState(false);
   const [roster, setRoster] = useState<Player[]>([]);
   const [newName, setNewName] = useState('');
   const [countInLeaderboard, setCountInLeaderboard] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Signed-in accounts are recognized on any device via Supabase auth;
+  // guests fall back to whatever this browser remembered locally.
   useEffect(() => {
-    setRemembered(getRememberedPlayer());
+    async function resolveIdentity() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('player_id')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+        if (profile) {
+          const { data: p } = await supabase.from('players').select('id, name, avatar').eq('id', profile.player_id).single();
+          if (p) {
+            setRemembered({ id: p.id, name: p.name, avatar: p.avatar, fromAccount: true });
+            setResolved(true);
+            return;
+          }
+        }
+      }
+      const guest = getRememberedPlayer();
+      setRemembered(guest ? { id: guest.id, name: guest.name, avatar: null, fromAccount: false } : null);
+      setResolved(true);
+    }
+    resolveIdentity();
   }, []);
 
   useEffect(() => {
@@ -64,11 +94,15 @@ export default function JoinPanel({
     setBusy(false);
   }
 
+  if (!resolved) return null;
   if (remembered && alreadySeated) return null;
 
   if (remembered && !alreadySeated) {
     return (
       <div className="card mb-4 text-center">
+        <div className="flex justify-center mb-2">
+          <PlayerAvatar name={remembered.name} avatar={remembered.avatar} size={44} />
+        </div>
         <p className="mb-3">
           Welcome back, <span className="font-semibold">{remembered.name}</span>
         </p>
@@ -100,6 +134,12 @@ export default function JoinPanel({
       <button className="btn-primary mt-3" onClick={() => setShowPicker(true)}>
         Choose my identity
       </button>
+      <div className="text-xs mt-2" style={{ color: 'var(--text-dim)' }}>
+        Want an avatar and cross-device recognition?{' '}
+        <Link href="/account" className="underline">
+          Set up an account
+        </Link>
+      </div>
       {showPicker && (
         <RosterPicker
           roster={roster.filter((p) => !seatedPlayerIds.includes(p.id))}
@@ -161,9 +201,10 @@ function RosterPicker({
             <button
               key={p.id}
               onClick={() => onPick(p)}
-              className="px-3 py-1.5 rounded-full text-sm"
+              className="px-3 py-1.5 rounded-full text-sm flex items-center gap-1.5"
               style={{ background: '#0d2b22', border: '1px solid var(--line)' }}
             >
+              {p.avatar && <span>{p.avatar}</span>}
               {p.name}
             </button>
           ))}

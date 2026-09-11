@@ -12,8 +12,9 @@ import CashoutModal from './CashoutModal';
 import QRModal from './QRModal';
 import ResultPoster from './ResultPoster';
 import BuyInsModal from './BuyInsModal';
+import PlayerAvatar from './PlayerAvatar';
 
-type SeatWithName = Seat & { players: { name: string } | null };
+type SeatWithName = Seat & { players: { name: string; avatar: string | null } | null };
 
 export default function SessionView({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -40,7 +41,7 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   const load = useCallback(async () => {
     const [{ data: s }, { data: st }, { data: bi }] = await Promise.all([
       supabase.from('sessions').select('*').eq('id', sessionId).single(),
-      supabase.from('seats').select('*, players(name)').eq('session_id', sessionId),
+      supabase.from('seats').select('*, players(name, avatar)').eq('session_id', sessionId),
       supabase.from('buy_ins').select('*').eq('session_id', sessionId),
     ]);
     setSession(s as Session);
@@ -202,12 +203,7 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
           return (
             <div key={seat.id} className="flex items-center justify-between py-3" style={{ borderBottom: '1px solid var(--line)' }}>
               <div className="flex items-center gap-3">
-                <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center font-semibold text-sm flex-shrink-0"
-                  style={{ background: '#2f5f7a' }}
-                >
-                  {n.name.slice(0, 1)}
-                </div>
+                <PlayerAvatar name={n.name} avatar={seat.players?.avatar} size={36} />
                 <div>
                   <div className="text-sm font-medium">
                     {n.name}{' '}

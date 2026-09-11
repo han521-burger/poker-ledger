@@ -139,10 +139,27 @@ supabase/
 
 ## 数据库迁移（老项目适用）
 
-如果你是**已经跑过一次 schema.sql 的老项目**（比如你现在部署的这套），不需要重跑整个 schema.sql，依次跑这两段增量脚本就够了：
+如果你是**已经跑过一次 schema.sql 的老项目**（比如你现在部署的这套），不需要重跑整个 schema.sql，依次跑这几段增量脚本就够了：
 
 1. `supabase/migration_002_host_token.sql`（如果之前已经跑过可以跳过）
-2. `supabase/migration_003_leaderboard_opt_out_and_buyin_edits.sql`（这次新加的，一定要跑）
+2. `supabase/migration_003_leaderboard_opt_out_and_buyin_edits.sql`
+3. `supabase/migration_004_profiles.sql`（这次新加的，一定要跑）
+
+## 可选账号系统（这次新加）
+
+- 邮箱魔法链接登录（Supabase Auth，不用设密码）。
+- **可选**：不注册账号完全不影响使用，照样能点名字直接入座，跟以前一样。
+- 注册的人可以从一组预设表情里选头像，而且账号登录状态会跨设备识别身份（不再依赖某一台设备的本地记忆）。
+- 入口在首页右上角 "My account"。
+
+**部署这个功能，你需要额外去 Supabase 后台做两件事**（纯代码这边做不到，必须去网页上点）：
+
+1. Supabase 项目 → **Authentication → URL Configuration**
+   - **Site URL** 填你的正式域名，比如 `https://han-poker.vercel.app`
+   - **Redirect URLs** 里加一条：`https://han-poker.vercel.app/account`（域名换成你自己的）
+2. 确认 **Authentication → Providers → Email** 是开启状态（Supabase 新项目默认是开的，一般不用改）
+
+登录邮件是 Supabase 自带的邮件服务发的，免费额度够小范围朋友局用，只是偶尔可能进垃圾邮件，请提醒朋友们查一下垃圾箱。如果以后人数变多想要更稳定的送达率，可以在 Supabase 里接自己的 SMTP，这个到时候再说。
 
 ## 已知限制 / 后续可以加强的地方
 

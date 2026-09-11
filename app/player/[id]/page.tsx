@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from '@/lib/supabase';
 import { fmt } from '@/lib/settlement';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
 type Point = {
   sessionId: string;
@@ -17,12 +18,14 @@ type Point = {
 export default function PlayerPage({ params }: { params: { id: string } }) {
   const playerId = params.id;
   const [name, setName] = useState<string | null>(null);
+  const [avatar, setAvatar] = useState<string | null>(null);
   const [points, setPoints] = useState<Point[] | null>(null);
 
   useEffect(() => {
     async function run() {
-      const { data: player } = await supabase.from('players').select('name').eq('id', playerId).single();
+      const { data: player } = await supabase.from('players').select('name, avatar').eq('id', playerId).single();
       setName(player?.name ?? 'Unknown player');
+      setAvatar(player?.avatar ?? null);
 
       const { data: mySeats } = await supabase
         .from('seats')
@@ -80,7 +83,10 @@ export default function PlayerPage({ params }: { params: { id: string } }) {
         <Link href="/leaderboard" className="text-sm" style={{ color: 'var(--text-dim)' }}>
           ← Leaderboard
         </Link>
-        <h1 className="font-display text-lg">{name ?? '…'}</h1>
+        <div className="flex items-center gap-2">
+          {name && <PlayerAvatar name={name} avatar={avatar} size={28} />}
+          <h1 className="font-display text-lg">{name ?? '…'}</h1>
+        </div>
         <span style={{ width: 32 }} />
       </div>
 

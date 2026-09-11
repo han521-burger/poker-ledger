@@ -8,10 +8,10 @@ import { Session } from '@/lib/types';
 
 export default function HomePage() {
   const router = useRouter();
-  const [sb, setSb] = useState('1');
-  const [bb, setBb] = useState('2');
+  const [sb, setSb] = useState('0.20');
+  const [bb, setBb] = useState('0.40');
   const [buyIn, setBuyIn] = useState('200');
-  const [location, setLocation] = useState('');
+  const [location, setLocation] = useState('Monash Logan Hall');
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
   const [creating, setCreating] = useState(false);
@@ -62,6 +62,7 @@ export default function HomePage() {
           </div>
         </div>
         <div className="flex flex-col items-end gap-1 text-sm" style={{ color: 'var(--text-dim)' }}>
+          <Link href="/account">My account →</Link>
           <Link href="/leaderboard">Leaderboard →</Link>
           <Link href="/history">History →</Link>
         </div>

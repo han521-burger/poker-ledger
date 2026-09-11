@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { fmt } from '@/lib/settlement';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
-type Row = { player_id: string; games: number; wins: number; net_sum: number; players: { name: string } | null };
+type Row = { player_id: string; games: number; wins: number; net_sum: number; players: { name: string; avatar: string | null } | null };
 
 export default function LeaderboardPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -13,7 +14,7 @@ export default function LeaderboardPage() {
   useEffect(() => {
     supabase
       .from('leaderboard')
-      .select('*, players(name)')
+      .select('*, players(name, avatar)')
       .order('net_sum', { ascending: false })
       .then(({ data }) => setRows((data as Row[]) || []));
   }, []);
@@ -47,6 +48,7 @@ export default function LeaderboardPage() {
                 <span className="text-sm w-5" style={{ color: 'var(--text-dim)' }}>
                   {i + 1}
                 </span>
+                <PlayerAvatar name={r.players?.name || '?'} avatar={r.players?.avatar} size={30} />
                 <span className="text-sm">{r.players?.name || '?'}</span>
               </div>
               <div className="text-right">

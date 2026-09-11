@@ -7,6 +7,7 @@ create extension if not exists "pgcrypto";
 create table if not exists players (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  avatar text,
   created_at timestamptz not null default now()
 );
 
@@ -50,6 +51,14 @@ create table if not exists leaderboard (
   games int not null default 0,
   wins int not null default 0,
   net_sum numeric not null default 0
+);
+
+-- 6. 账号资料表：把 Supabase 登录账号跟某一个玩家身份绑定起来。
+-- 这是可选的——没注册账号的人照样能靠点名字入座，跟以前一样。
+create table if not exists profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  player_id uuid not null unique references players(id) on delete cascade,
+  created_at timestamptz not null default now()
 );
 
 create index if not exists idx_seats_session on seats(session_id);
@@ -103,3 +112,15 @@ alter table leaderboard enable row level security;
 create policy "public read leaderboard" on leaderboard for select using (true);
 -- 注意：leaderboard 的写入只通过上面的 bump_leaderboard() 函数（security definer），
 -- 不开放直接 insert/update 策略，避免有人绕过结算流程直接改榜。
+
+-- profiles 表只有本人能读写自己那一行，别人看不到、也改不了谁跟哪个账号绑定。
+alter table profiles enable row level security;
+create policy "user reads own profile" on profiles for select using (auth.uid() = user_id);
+create policy "user inserts own profile" on profiles for insert with check (auth.uid() = user_id);
+create policy "user updates own profile" on profiles for update using (auth.uid() = user_id);
+create policy "user deletes own profile" on profiles for delete using (auth.uid() = user_id);
+
+-- 头像/名字只有绑定了这个 player_id 的账号本人能改；没登录账号的人（匿名 key）
+-- 不受影响地继续能新建玩家、能读所有玩家信息，只是不能改别人的资料。
+create policy "profile owner can update own player" on players for update
+  using (exists (select 1 from profiles where profiles.player_id = players.id and profiles.user_id = auth.uid()));

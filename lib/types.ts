@@ -1,6 +1,13 @@
 export type Player = {
   id: string;
   name: string;
+  avatar: string | null;
+  created_at: string;
+};
+
+export type Profile = {
+  user_id: string;
+  player_id: string;
   created_at: string;
 };
 
