@@ -5,6 +5,9 @@ export const AVATAR_OPTIONS = [
   '🎲', '🎩', '🕶️', '🐯', '🦊',
   '🐻', '🐼', '🦁', '🐵', '🐸',
   '🦄', '🐺', '🐨', '🐹', '🦉',
+  '🧧', '🪙', '💰', '🤑', '👑',
+  '💎', '🦈', '🐉', '🍀', '🎰',
+  '🔥', '😎', '🌟', '⚡', '🥃',
 ];
 
 export default function AvatarPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {

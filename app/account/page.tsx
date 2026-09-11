@@ -23,6 +23,8 @@ export default function AccountPage() {
   const [newName, setNewName] = useState('');
   const [avatar, setAvatar] = useState(AVATAR_OPTIONS[0]);
   const [saving, setSaving] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
 
   async function resolveState() {
     const {
@@ -103,6 +105,16 @@ export default function AccountPage() {
     if (!player) return;
     setPlayer({ ...player, avatar: newAvatar });
     await supabase.from('players').update({ avatar: newAvatar }).eq('id', player.id);
+  }
+
+  async function saveName() {
+    if (!player) return;
+    const trimmed = nameInput.trim();
+    if (!trimmed) return;
+    await supabase.from('players').update({ name: trimmed }).eq('id', player.id);
+    rememberPlayer(player.id, trimmed);
+    setPlayer({ ...player, name: trimmed });
+    setEditingName(false);
   }
 
   async function signOut() {
@@ -231,7 +243,39 @@ export default function AccountPage() {
           <div className="flex justify-center mb-3">
             <PlayerAvatar name={player.name} avatar={player.avatar} size={64} />
           </div>
-          <div className="font-display text-lg mb-1">{player.name}</div>
+          <div className="font-display text-lg mb-1">
+            {editingName ? (
+              <div className="flex items-center gap-2 justify-center">
+                <input
+                  className="field-input"
+                  style={{ maxWidth: 180, textAlign: 'center' }}
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  autoFocus
+                />
+                <button className="btn-small" onClick={saveName}>
+                  Save
+                </button>
+                <button className="btn-small" onClick={() => setEditingName(false)}>
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <span className="inline-flex items-center gap-2">
+                {player.name}
+                <button
+                  className="text-xs underline"
+                  style={{ color: 'var(--text-dim)' }}
+                  onClick={() => {
+                    setNameInput(player.name);
+                    setEditingName(true);
+                  }}
+                >
+                  Edit
+                </button>
+              </span>
+            )}
+          </div>
           <div className="text-xs mb-5" style={{ color: 'var(--text-dim)' }}>
             Signed in — this device (and any other you log into) will recognize you automatically.
           </div>

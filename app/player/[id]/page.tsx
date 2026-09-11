@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from '@/lib/supabase';
 import { fmt } from '@/lib/settlement';
+import { computeBadges, currentStreak, Badge } from '@/lib/achievements';
 import PlayerAvatar from '@/components/PlayerAvatar';
+import BadgeRow from '@/components/BadgeRow';
 
 type Point = {
   sessionId: string;
@@ -13,6 +15,8 @@ type Point = {
   location: string;
   net: number;
   cumulative: number;
+  totalBuyIn: number;
+  rebuyCount: number;
 };
 
 export default function PlayerPage({ params }: { params: { id: string } }) {
@@ -20,6 +24,8 @@ export default function PlayerPage({ params }: { params: { id: string } }) {
   const [name, setName] = useState<string | null>(null);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [points, setPoints] = useState<Point[] | null>(null);
+  const [badges, setBadges] = useState<Badge[]>([]);
+  const [streak, setStreak] = useState(0);
 
   useEffect(() => {
     async function run() {
@@ -40,9 +46,10 @@ export default function PlayerPage({ params }: { params: { id: string } }) {
 
       const sessionIds = mySeats.map((s) => s.session_id);
 
-      const [{ data: sessionsData }, { data: myBuyIns }] = await Promise.all([
+      const [{ data: sessionsData }, { data: myBuyIns }, { data: lb }] = await Promise.all([
         supabase.from('sessions').select('id, date, location, status').in('id', sessionIds).eq('status', 'finished'),
         supabase.from('buy_ins').select('session_id, amount').eq('player_id', playerId).in('session_id', sessionIds),
+        supabase.from('leaderboard').select('player_id, net_sum').order('net_sum', { ascending: false }),
       ]);
 
       const finishedIds = new Set((sessionsData || []).map((s) => s.id));
@@ -51,9 +58,8 @@ export default function PlayerPage({ params }: { params: { id: string } }) {
       const rows: Point[] = mySeats
         .filter((seat) => finishedIds.has(seat.session_id))
         .map((seat) => {
-          const totalBuyIn = (myBuyIns || [])
-            .filter((b) => b.session_id === seat.session_id)
-            .reduce((a, b) => a + Number(b.amount), 0);
+          const sessionBuyIns = (myBuyIns || []).filter((b) => b.session_id === seat.session_id);
+          const totalBuyIn = sessionBuyIns.reduce((a, b) => a + Number(b.amount), 0);
           const cashOut = seat.cash_out == null ? 0 : Number(seat.cash_out);
           const s = sessionsById.get(seat.session_id)!;
           return {
@@ -62,6 +68,8 @@ export default function PlayerPage({ params }: { params: { id: string } }) {
             location: s.location,
             net: cashOut - totalBuyIn,
             cumulative: 0,
+            totalBuyIn,
+            rebuyCount: sessionBuyIns.length,
           };
         })
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -73,6 +81,14 @@ export default function PlayerPage({ params }: { params: { id: string } }) {
       }
 
       setPoints(rows);
+      setStreak(currentStreak(rows));
+
+      let rank: { position: number; total: number } | undefined;
+      if (lb && lb.length > 0) {
+        const idx = lb.findIndex((r) => r.player_id === playerId);
+        if (idx !== -1) rank = { position: idx + 1, total: lb.length };
+      }
+      setBadges(computeBadges(rows, rank));
     }
     run();
   }, [playerId]);
@@ -102,6 +118,21 @@ export default function PlayerPage({ params }: { params: { id: string } }) {
 
       {points && points.length > 0 && (
         <>
+          {(badges.length > 0 || Math.abs(streak) >= 2) && (
+            <div className="card mb-4 text-center">
+              {Math.abs(streak) >= 2 && (
+                <div className="text-sm mb-3">
+                  {streak > 0 ? (
+                    <span>🔥 Current {streak}-game win streak</span>
+                  ) : (
+                    <span>🧊 Current {-streak}-game losing streak</span>
+                  )}
+                </div>
+              )}
+              <BadgeRow badges={badges} />
+            </div>
+          )}
+
           <div className="card mb-4">
             <div className="text-xs mb-3" style={{ color: 'var(--text-dim)' }}>
               Cumulative net over time
