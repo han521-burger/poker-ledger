@@ -24,16 +24,24 @@ export default function BuyInsModal({
     const amount = parseFloat(editValue);
     if (!amount || amount <= 0) return;
     setBusy(true);
-    await supabase.from('buy_ins').update({ amount }).eq('id', id);
+    const { error } = await supabase.from('buy_ins').update({ amount }).eq('id', id);
     setBusy(false);
+    if (error) {
+      alert(`Couldn't update that amount: ${error.message}`);
+      return;
+    }
     setEditingId(null);
     onChanged();
   }
 
   async function removeEntry(id: string) {
     setBusy(true);
-    await supabase.from('buy_ins').delete().eq('id', id);
+    const { error } = await supabase.from('buy_ins').delete().eq('id', id);
     setBusy(false);
+    if (error) {
+      alert(`Couldn't void that entry: ${error.message}`);
+      return;
+    }
     onChanged();
   }
 

@@ -45,7 +45,17 @@ export default function HistoryPage() {
               style={{ borderBottom: '1px solid var(--line)' }}
             >
               <div>
-                <div className="text-sm font-medium">{s.location}</div>
+                <div className="text-sm font-medium">
+                  {s.location}
+                  {s.voided && (
+                    <span
+                      className="text-xs px-2 py-0.5 rounded-full ml-1.5"
+                      style={{ background: 'rgba(181,68,58,0.2)', color: '#e8a89f' }}
+                    >
+                      Voided
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs" style={{ color: 'var(--text-dim)' }}>
                   Blinds {s.small_blind}/{s.big_blind} · buy-in {fmt(s.buy_in)}
                 </div>

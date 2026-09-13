@@ -89,9 +89,12 @@ export default function JoinPanel({
       return;
     }
     const { data, error } = await supabase.from('players').insert({ name }).select().single();
-    if (!error && data) {
-      await join(data.id, data.name);
+    if (error || !data) {
+      alert(`Couldn't create that player: ${error?.message ?? 'unknown error'}`);
+      setBusy(false);
+      return;
     }
+    await join(data.id, data.name);
     setBusy(false);
   }
 

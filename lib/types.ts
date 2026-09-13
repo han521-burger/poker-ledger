@@ -21,6 +21,7 @@ export type Session = {
   host_pin: string;
   host_token: string;
   created_by: string | null;
+  voided: boolean;
   status: 'active' | 'finished';
 };
 

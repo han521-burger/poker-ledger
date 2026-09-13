@@ -53,9 +53,12 @@ export default function AddPlayerModal({
       return;
     }
     const { data, error } = await supabase.from('players').insert({ name }).select().single();
-    if (!error && data) {
-      await onAdd(data.id, data.name, countInLeaderboard);
+    if (error || !data) {
+      alert(`Couldn't create that player: ${error?.message ?? 'unknown error'}`);
+      setBusy(false);
+      return;
     }
+    await onAdd(data.id, data.name, countInLeaderboard);
     setBusy(false);
     onClose();
   }

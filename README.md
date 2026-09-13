@@ -99,6 +99,7 @@ supabase/
   migration_003_*.sql       Incremental migration (leaderboard opt-out + buy-in edit policies)
   migration_004_*.sql       Incremental migration (optional account profiles + avatar)
   migration_005_*.sql       Incremental migration (created_by, for cross-device host recognition)
+  migration_006_*.sql       Incremental migration (voided flag, for the "void this session" button)
 ```
 
 ## 和最初方案的对应关系
@@ -120,6 +121,8 @@ supabase/
 - 除了房主之外，其他人打开这场牌局的看板，完全看不到 Records / + Rebuy / Cash out / Settle 这些按钮，只能看数据。
 - 房主看得到按钮，**输对一次 PIN 后 30 分钟内不用再输**，超过 30 分钟再操作会重新弹 PIN。看板上会显示"🔓 Unlocked for N more min"或者"🔒"提示当前状态。
 - 房主还多了一个 **"+ Add player"** 按钮，可以直接帮别人入座，不用每个人都自己扫码/开链接。
+- **忘了 PIN 怎么办**：只要这台设备/账号还被认成房主（不需要知道旧 PIN），点"Forgot PIN? Reset it"就能直接设一个新的。这是刻意设计成这样的——房主身份的判定已经够严格了，PIN 主要是防误触，不需要再叠加一层"忘记密码"的邮箱找回流程。
+- **开错局/打到一半不想要了**：房主可以点"Made a mistake? Void this session instead"直接作废，不用走完整结算流程。作废的局会标记 `voided`，不会计入任何人的排行榜，历史列表里能看到但会标"Voided"。
 
 **已知的安全边界**：PIN 校验是纯前端拿输入值跟 `sessions.host_pin` 明文比对，PIN 本身会随着牌局数据一起被所有访问者的浏览器读到（在开发者工具的网络请求里能看到明文）。房主身份的 `host_token` 同理也在公开的读取范围内。对朋友局这种信任场景够用，但不是银行级安全——不要用你其他账户也在用的密码当这个 PIN。
 
@@ -150,7 +153,8 @@ supabase/
 1. `supabase/migration_002_host_token.sql`（如果之前已经跑过可以跳过）
 2. `supabase/migration_003_leaderboard_opt_out_and_buyin_edits.sql`
 3. `supabase/migration_004_profiles.sql`
-4. `supabase/migration_005_host_recognition.sql`（这次新加的，一定要跑）
+4. `supabase/migration_005_host_recognition.sql`
+5. `supabase/migration_006_void_session.sql`（这次新加的，一定要跑）
 
 ## 可选账号系统（这次新加）
 

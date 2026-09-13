@@ -6,23 +6,26 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Session } from '@/lib/types';
 import { setHostToken } from '@/lib/hostAuth';
+import NavMenu from '@/components/NavMenu';
 
 export default function HomePage() {
   const router = useRouter();
   const [sb, setSb] = useState('0.20');
   const [bb, setBb] = useState('0.40');
-  const [buyIn, setBuyIn] = useState('200');
+  const [buyIn, setBuyIn] = useState('40');
   const [location, setLocation] = useState('Monash Logan Hall');
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
   const [creating, setCreating] = useState(false);
   const [recent, setRecent] = useState<Session[]>([]);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     supabase
       .from('sessions')
       .select('*')
       .eq('status', 'finished')
+      .eq('voided', false)
       .order('date', { ascending: false })
       .limit(3)
       .then(({ data }) => setRecent((data as Session[]) || []));
@@ -52,26 +55,33 @@ export default function HomePage() {
       .select()
       .single();
     setCreating(false);
-    if (!error && data) {
+    if (error) {
+      alert(`Couldn't start the session: ${error.message}`);
+      return;
+    }
+    if (data) {
       setHostToken(data.id, data.host_token);
-      router.push(`/session/${data.id}`);
+      try {
+        await navigator.clipboard.writeText(pin);
+        setToast('PIN copied to clipboard — paste it to share with a co-host');
+      } catch {
+        // Clipboard access can fail (permissions, insecure context); not
+        // worth blocking the flow over, the PIN is still shown on screen.
+      }
+      setTimeout(() => router.push(`/session/${data.id}`), 700);
     }
   }
 
   return (
     <div>
-      <header className="flex items-baseline justify-between pb-4 mb-5" style={{ borderBottom: '1px solid var(--line)' }}>
+      <header className="flex items-center justify-between pb-4 mb-5" style={{ borderBottom: '1px solid var(--line)' }}>
         <div>
           <div className="font-display text-2xl font-semibold">Poker Ledger</div>
           <div className="text-xs mt-0.5" style={{ color: 'var(--text-dim)' }}>
             FELT &amp; LEDGER · shared home-game bankroll
           </div>
         </div>
-        <div className="flex flex-col items-end gap-1 text-sm" style={{ color: 'var(--text-dim)' }}>
-          <Link href="/account">My account →</Link>
-          <Link href="/leaderboard">Leaderboard →</Link>
-          <Link href="/history">History →</Link>
-        </div>
+        <NavMenu />
       </header>
 
       <div className="card mb-4">
@@ -142,6 +152,15 @@ export default function HomePage() {
               <span style={{ color: 'var(--text-dim)' }}>{new Date(s.date).toLocaleDateString()}</span>
             </Link>
           ))}
+        </div>
+      )}
+
+      {toast && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-sm font-medium shadow-lg z-[200]"
+          style={{ background: '#f1e8d6', color: '#0d2b22' }}
+        >
+          {toast}
         </div>
       )}
     </div>

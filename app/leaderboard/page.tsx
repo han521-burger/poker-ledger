@@ -25,7 +25,7 @@ export default function LeaderboardPage() {
       // history. Pulled once in bulk and grouped client-side rather than
       // one query per player.
       const [{ data: sessionsData }, { data: seatsData }, { data: buyInsData }] = await Promise.all([
-        supabase.from('sessions').select('id, date').eq('status', 'finished'),
+        supabase.from('sessions').select('id, date').eq('status', 'finished').eq('voided', false),
         supabase.from('seats').select('session_id, player_id, cash_out').eq('count_in_leaderboard', true),
         supabase.from('buy_ins').select('session_id, player_id, amount'),
       ]);

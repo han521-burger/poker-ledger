@@ -59,11 +59,15 @@ export default function AccountPage() {
   async function sendMagicLink() {
     if (!email.trim()) return;
     setSending(true);
-    await supabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: { emailRedirectTo: `${window.location.origin}/account` },
     });
     setSending(false);
+    if (error) {
+      alert(`Couldn't send the sign-in link: ${error.message}`);
+      return;
+    }
     setStage('link_sent');
   }
 
@@ -81,6 +85,7 @@ export default function AccountPage() {
       }
       const { data, error } = await supabase.from('players').insert({ name: trimmed, avatar }).select().single();
       if (error || !data) {
+        alert(`Couldn't create that player: ${error?.message ?? 'unknown error'}`);
         setSaving(false);
         return;
       }
@@ -93,8 +98,16 @@ export default function AccountPage() {
       return;
     }
 
-    await supabase.from('profiles').insert({ user_id: userId, player_id: playerId });
-    await supabase.from('players').update({ avatar }).eq('id', playerId);
+    const { error: profileErr } = await supabase.from('profiles').insert({ user_id: userId, player_id: playerId });
+    if (profileErr) {
+      alert(`Couldn't link your account: ${profileErr.message}`);
+      setSaving(false);
+      return;
+    }
+    const { error: avatarErr } = await supabase.from('players').update({ avatar }).eq('id', playerId);
+    if (avatarErr) {
+      alert(`Profile linked, but the avatar didn't save: ${avatarErr.message}`);
+    }
     rememberPlayer(playerId, name);
     setPlayer({ id: playerId, name, avatar });
     setStage('has_profile');
@@ -103,15 +116,24 @@ export default function AccountPage() {
 
   async function updateAvatar(newAvatar: string) {
     if (!player) return;
+    const previous = player.avatar;
     setPlayer({ ...player, avatar: newAvatar });
-    await supabase.from('players').update({ avatar: newAvatar }).eq('id', player.id);
+    const { error } = await supabase.from('players').update({ avatar: newAvatar }).eq('id', player.id);
+    if (error) {
+      alert(`Couldn't save that avatar: ${error.message}`);
+      setPlayer({ ...player, avatar: previous });
+    }
   }
 
   async function saveName() {
     if (!player) return;
     const trimmed = nameInput.trim();
     if (!trimmed) return;
-    await supabase.from('players').update({ name: trimmed }).eq('id', player.id);
+    const { error } = await supabase.from('players').update({ name: trimmed }).eq('id', player.id);
+    if (error) {
+      alert(`Couldn't save that name: ${error.message}`);
+      return;
+    }
     rememberPlayer(player.id, trimmed);
     setPlayer({ ...player, name: trimmed });
     setEditingName(false);

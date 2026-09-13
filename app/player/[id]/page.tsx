@@ -47,7 +47,7 @@ export default function PlayerPage({ params }: { params: { id: string } }) {
       const sessionIds = mySeats.map((s) => s.session_id);
 
       const [{ data: sessionsData }, { data: myBuyIns }, { data: lb }] = await Promise.all([
-        supabase.from('sessions').select('id, date, location, status').in('id', sessionIds).eq('status', 'finished'),
+        supabase.from('sessions').select('id, date, location, status').in('id', sessionIds).eq('status', 'finished').eq('voided', false),
         supabase.from('buy_ins').select('session_id, amount').eq('player_id', playerId).in('session_id', sessionIds),
         supabase.from('leaderboard').select('player_id, net_sum').order('net_sum', { ascending: false }),
       ]);

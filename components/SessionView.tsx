@@ -14,6 +14,7 @@ import ResultPoster from './ResultPoster';
 import BuyInsModal from './BuyInsModal';
 import PlayerAvatar from './PlayerAvatar';
 import AddPlayerModal from './AddPlayerModal';
+import PinResetModal from './PinResetModal';
 import { getHostToken } from '@/lib/hostAuth';
 import { isUnlocked, setUnlocked, unlockMinutesRemaining } from '@/lib/hostUnlock';
 
@@ -34,6 +35,7 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   const [cashoutFor, setCashoutFor] = useState<{ id: string; name: string } | null>(null);
   const [recordsFor, setRecordsFor] = useState<{ id: string; name: string } | null>(null);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
+  const [showPinReset, setShowPinReset] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -131,43 +133,64 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   }
 
   async function handleJoin(playerId: string, name: string, countInLeaderboard: boolean) {
-    await supabase.from('seats').insert({
+    const { error: seatErr } = await supabase.from('seats').insert({
       session_id: sessionId,
       player_id: playerId,
       count_in_leaderboard: countInLeaderboard,
     });
-    await supabase.from('buy_ins').insert({
+    if (seatErr) {
+      fireToast(`Couldn't seat ${name}: ${seatErr.message}`);
+      return;
+    }
+    const { error: buyInErr } = await supabase.from('buy_ins').insert({
       session_id: sessionId,
       player_id: playerId,
       amount: session?.buy_in || 0,
     });
+    if (buyInErr) {
+      fireToast(`Seated, but the initial buy-in failed: ${buyInErr.message}`);
+      load();
+      return;
+    }
     fireToast(`${name} took a seat`);
     load();
   }
 
   async function doRebuy(playerId: string, amount: number) {
-    await supabase.from('buy_ins').insert({ session_id: sessionId, player_id: playerId, amount });
+    const { error } = await supabase.from('buy_ins').insert({ session_id: sessionId, player_id: playerId, amount });
     setRebuyFor(null);
+    if (error) {
+      fireToast(`Rebuy failed: ${error.message}`);
+      return;
+    }
     fireToast(`Rebuy ${fmt(amount)}`);
     load();
   }
 
   async function doCashout(playerId: string, amount: number) {
-    await supabase
+    const { error } = await supabase
       .from('seats')
       .update({ cash_out: amount, has_left: true })
       .eq('session_id', sessionId)
       .eq('player_id', playerId);
     setCashoutFor(null);
+    if (error) {
+      fireToast(`Cash out failed: ${error.message}`);
+      return;
+    }
     load();
   }
 
   async function undoCashout(playerId: string) {
-    await supabase
+    const { error } = await supabase
       .from('seats')
       .update({ cash_out: null, has_left: false })
       .eq('session_id', sessionId)
       .eq('player_id', playerId);
+    if (error) {
+      fireToast(`Undo failed: ${error.message}`);
+      return;
+    }
     load();
   }
 
@@ -177,14 +200,53 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
     // in for this session; everyone still shows up in the recap poster below.
     for (const n of nets) {
       if (!n.countInLeaderboard) continue;
-      await supabase.rpc('bump_leaderboard', {
+      const { error } = await supabase.rpc('bump_leaderboard', {
         p_player_id: n.playerId,
         p_net: n.net ?? 0,
         p_won: (n.net ?? 0) > 0,
       });
+      if (error) {
+        fireToast(`Leaderboard update failed for ${n.name}: ${error.message}`);
+      }
     }
-    await supabase.from('sessions').update({ status: 'finished' }).eq('id', sessionId);
+    const { error } = await supabase.from('sessions').update({ status: 'finished' }).eq('id', sessionId);
+    if (error) {
+      fireToast(`Settle failed: ${error.message}`);
+      return;
+    }
     setShowResult(true);
+    load();
+  }
+
+  async function resetPin(newPin: string) {
+    const { error } = await supabase.from('sessions').update({ host_pin: newPin }).eq('id', sessionId);
+    if (error) {
+      fireToast(`Couldn't update PIN: ${error.message}`);
+      return;
+    }
+    setUnlocked(sessionId);
+    setUnlockTick((t) => t + 1);
+    setShowPinReset(false);
+    try {
+      await navigator.clipboard.writeText(newPin);
+      fireToast('PIN updated and copied to clipboard');
+    } catch {
+      fireToast('PIN updated');
+    }
+    load();
+  }
+
+  async function voidSession() {
+    const ok = window.confirm(
+      "Void this session? It'll be closed without settling or affecting anyone's leaderboard stats. This can't be undone."
+    );
+    if (!ok) return;
+    const { error } = await supabase.from('sessions').update({ status: 'finished', voided: true }).eq('id', sessionId);
+    if (error) {
+      fireToast(`Couldn't void session: ${error.message}`);
+      return;
+    }
+    fireToast('Session voided');
     load();
   }
 
@@ -235,6 +297,13 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
             )}
             <button className="btn-ghost mt-3" onClick={() => requirePin(() => setShowAddPlayer(true))}>
               + Add player
+            </button>
+            <button
+              className="text-xs mt-3 underline"
+              style={{ color: 'var(--text-dim)' }}
+              onClick={() => setShowPinReset(true)}
+            >
+              Forgot PIN? Reset it
             </button>
           </>
         )}
@@ -341,14 +410,28 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
+      {isHost && session.status === 'active' && (
+        <div className="text-center mb-4">
+          <button className="text-xs underline" style={{ color: 'var(--text-dim)' }} onClick={() => requirePin(voidSession)}>
+            Made a mistake? Void this session instead
+          </button>
+        </div>
+      )}
+
       {session.status === 'finished' && (
         <div className="card mb-4 text-center">
-          <div className="mb-3" style={{ color: 'var(--text-dim)' }}>
-            This session has been settled
-          </div>
-          <button className="btn-primary" onClick={() => setShowResult(true)}>
-            View recap
-          </button>
+          {session.voided ? (
+            <div style={{ color: 'var(--text-dim)' }}>This session was voided — no stats were recorded</div>
+          ) : (
+            <>
+              <div className="mb-3" style={{ color: 'var(--text-dim)' }}>
+                This session has been settled
+              </div>
+              <button className="btn-primary" onClick={() => setShowResult(true)}>
+                View recap
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -394,6 +477,8 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
           onClose={() => setRecordsFor(null)}
         />
       )}
+
+      {showPinReset && <PinResetModal onConfirm={resetPin} onCancel={() => setShowPinReset(false)} />}
 
       {showAddPlayer && (
         <AddPlayerModal
