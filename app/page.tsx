@@ -11,7 +11,7 @@ export default function HomePage() {
   const router = useRouter();
   const [sb, setSb] = useState('0.20');
   const [bb, setBb] = useState('0.40');
-  const [buyIn, setBuyIn] = useState('40');
+  const [buyIn, setBuyIn] = useState('200');
   const [location, setLocation] = useState('Monash Logan Hall');
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');

@@ -13,7 +13,9 @@ import QRModal from './QRModal';
 import ResultPoster from './ResultPoster';
 import BuyInsModal from './BuyInsModal';
 import PlayerAvatar from './PlayerAvatar';
+import AddPlayerModal from './AddPlayerModal';
 import { getHostToken } from '@/lib/hostAuth';
+import { isUnlocked, setUnlocked, unlockMinutesRemaining } from '@/lib/hostUnlock';
 
 type SeatWithName = Seat & { players: { name: string; avatar: string | null } | null };
 
@@ -23,13 +25,15 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   const [buyIns, setBuyIns] = useState<BuyIn[]>([]);
   const [loading, setLoading] = useState(true);
   const [isHost, setIsHost] = useState(false);
+  const [unlockTick, setUnlockTick] = useState(0); // bump to force a re-render when unlock state changes
 
-  // Every host action re-prompts for the PIN — nothing is remembered across
-  // clicks. `pendingAction` holds the function to run once the PIN checks out.
+  // pendingAction holds the function to run once the PIN checks out (skipped
+  // entirely if the host already unlocked within the last 30 minutes).
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [rebuyFor, setRebuyFor] = useState<{ id: string; name: string } | null>(null);
   const [cashoutFor, setCashoutFor] = useState<{ id: string; name: string } | null>(null);
   const [recordsFor, setRecordsFor] = useState<{ id: string; name: string } | null>(null);
+  const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -119,6 +123,10 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   const balanced = allCashedOut && potCents === cashOutCents;
 
   function requirePin(action: () => void) {
+    if (isUnlocked(sessionId)) {
+      action();
+      return;
+    }
     setPendingAction(() => action);
   }
 
@@ -214,6 +222,22 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
         <div className="text-xs mt-2" style={{ color: 'var(--text-dim)' }}>
           Still on the table: <span className="num" style={{ color: '#c79a4b' }}>{fmt(diff)}</span>
         </div>
+        {isHost && session.status === 'active' && (
+          <>
+            {isUnlocked(sessionId) ? (
+              <div className="text-xs mt-3" style={{ color: '#c79a4b' }}>
+                🔓 Unlocked for {unlockMinutesRemaining(sessionId)} more min
+              </div>
+            ) : (
+              <div className="text-xs mt-3" style={{ color: 'var(--text-dim)' }}>
+                🔒 Enter PIN on your next action to unlock for 30 min
+              </div>
+            )}
+            <button className="btn-ghost mt-3" onClick={() => requirePin(() => setShowAddPlayer(true))}>
+              + Add player
+            </button>
+          </>
+        )}
       </div>
 
       <div className="card mb-4">
@@ -332,6 +356,8 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
         <PinModal
           onConfirm={(pin) => {
             if (pin === session.host_pin) {
+              setUnlocked(sessionId);
+              setUnlockTick((t) => t + 1);
               const action = pendingAction;
               setPendingAction(null);
               action();
@@ -366,6 +392,14 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
           buyIns={buyIns.filter((b) => b.player_id === recordsFor.id)}
           onChanged={load}
           onClose={() => setRecordsFor(null)}
+        />
+      )}
+
+      {showAddPlayer && (
+        <AddPlayerModal
+          seatedPlayerIds={seatedPlayerIds}
+          onAdd={handleJoin}
+          onClose={() => setShowAddPlayer(false)}
         />
       )}
 
