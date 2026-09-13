@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Session } from '@/lib/types';
+import { setHostToken } from '@/lib/hostAuth';
 
 export default function HomePage() {
   const router = useRouter();
   const [sb, setSb] = useState('0.20');
   const [bb, setBb] = useState('0.40');
-  const [buyIn, setBuyIn] = useState('40');
+  const [buyIn, setBuyIn] = useState('200');
   const [location, setLocation] = useState('Monash Logan Hall');
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
@@ -34,6 +35,9 @@ export default function HomePage() {
     }
     setPinError('');
     setCreating(true);
+    const {
+      data: { session: authSession },
+    } = await supabase.auth.getSession();
     const { data, error } = await supabase
       .from('sessions')
       .insert({
@@ -42,12 +46,14 @@ export default function HomePage() {
         buy_in: parseFloat(buyIn) || 200,
         location: location || 'Unnamed location',
         host_pin: pin,
+        created_by: authSession?.user?.id ?? null,
         status: 'active',
       })
       .select()
       .single();
     setCreating(false);
     if (!error && data) {
+      setHostToken(data.id, data.host_token);
       router.push(`/session/${data.id}`);
     }
   }

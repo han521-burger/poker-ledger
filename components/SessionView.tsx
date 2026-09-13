@@ -13,6 +13,7 @@ import QRModal from './QRModal';
 import ResultPoster from './ResultPoster';
 import BuyInsModal from './BuyInsModal';
 import PlayerAvatar from './PlayerAvatar';
+import { getHostToken } from '@/lib/hostAuth';
 
 type SeatWithName = Seat & { players: { name: string; avatar: string | null } | null };
 
@@ -21,6 +22,7 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   const [seats, setSeats] = useState<SeatWithName[]>([]);
   const [buyIns, setBuyIns] = useState<BuyIn[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isHost, setIsHost] = useState(false);
 
   // Every host action re-prompts for the PIN — nothing is remembered across
   // clicks. `pendingAction` holds the function to run once the PIN checks out.
@@ -55,6 +57,29 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
     setShareUrl(typeof window !== 'undefined' ? window.location.href : '');
   }, [load]);
 
+  // Visibility of the host-only buttons: this device created the session
+  // (local token match) or this logged-in account created it (works across
+  // that account's devices). Either way, every click still re-prompts PIN.
+  useEffect(() => {
+    async function resolveHost() {
+      if (!session) return;
+      const stored = getHostToken(sessionId);
+      if (stored && stored === session.host_token) {
+        setIsHost(true);
+        return;
+      }
+      if (session.created_by) {
+        const {
+          data: { session: authSession },
+        } = await supabase.auth.getSession();
+        setIsHost(!!authSession && authSession.user.id === session.created_by);
+        return;
+      }
+      setIsHost(false);
+    }
+    resolveHost();
+  }, [session, sessionId]);
+
   useEffect(() => {
     const channel = supabase
       .channel(`session-${sessionId}`)
@@ -88,8 +113,10 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   const pot = nets.reduce((a, n) => a + n.totalBuyIn, 0);
   const allCashedOut = seats.length > 0 && seats.every((s) => s.cash_out != null);
   const totalCashOut = nets.reduce((a, n) => a + (n.cashOut || 0), 0);
-  const diff = pot - totalCashOut;
-  const balanced = allCashedOut && Math.abs(diff) < 0.01;
+  const potCents = Math.round(pot * 100);
+  const cashOutCents = Math.round(totalCashOut * 100);
+  const diff = (potCents - cashOutCents) / 100;
+  const balanced = allCashedOut && potCents === cashOutCents;
 
   function requirePin(action: () => void) {
     setPendingAction(() => action);
@@ -179,10 +206,13 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
           {session.location} · Blinds {session.small_blind}/{session.big_blind} · Standard buy-in {fmt(session.buy_in)}
         </div>
         <div className="text-xs mb-1" style={{ color: 'var(--text-dim)' }}>
-          Current pot
+          Total buy-ins
         </div>
         <div className="text-4xl font-semibold num" style={{ color: '#c79a4b' }}>
           {fmt(pot)}
+        </div>
+        <div className="text-xs mt-2" style={{ color: 'var(--text-dim)' }}>
+          Still on the table: <span className="num" style={{ color: '#c79a4b' }}>{fmt(diff)}</span>
         </div>
       </div>
 
@@ -192,9 +222,9 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
             No players yet — share the join link or scan the QR code above
           </div>
         )}
-        {seats.length > 0 && session.status === 'active' && (
+        {seats.length > 0 && session.status === 'active' && !isHost && (
           <div className="text-xs mb-3 text-center" style={{ color: 'var(--text-dim)' }}>
-            Rebuy / cash out / settle require the host PIN, every time
+            Only the host can manage rebuys, cash-outs, and settlement
           </div>
         )}
         {seats.map((seat) => {
@@ -228,7 +258,7 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
                   </div>
                 </div>
               </div>
-              {session.status === 'active' && (
+              {isHost && session.status === 'active' && (
                 <div className="flex gap-1.5 flex-wrap justify-end">
                   <button className="btn-small" onClick={() => requirePin(() => setRecordsFor({ id: seat.player_id, name: n.name }))}>
                     Records
@@ -255,7 +285,17 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
         })}
       </div>
 
-      {seats.length > 0 && session.status === 'active' && (
+      {!isHost && seats.length > 0 && session.status === 'active' && (
+        <div className="card mb-4 text-center text-sm" style={{ color: 'var(--text-dim)' }}>
+          {allCashedOut
+            ? balanced
+              ? 'Balanced ✓ — waiting on the host to settle'
+              : 'Off balance — the host is double-checking the log'
+            : `Waiting on everyone to cash out (${seats.filter((s) => s.cash_out == null).length} left)`}
+        </div>
+      )}
+
+      {isHost && seats.length > 0 && session.status === 'active' && (
         <div className="card mb-4">
           <div
             className="flex items-center gap-2 px-3 py-3 rounded-lg text-sm mb-3"

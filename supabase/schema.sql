@@ -21,6 +21,7 @@ create table if not exists sessions (
   buy_in numeric not null default 200,
   host_pin text,
   host_token uuid not null default gen_random_uuid(),
+  created_by uuid references auth.users(id) on delete set null,
   status text not null default 'active' check (status in ('active', 'finished'))
 );
 

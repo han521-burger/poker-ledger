@@ -97,6 +97,8 @@ supabase/
   schema.sql               Fresh-install table + policy script
   migration_002_*.sql       Incremental migration (host_token)
   migration_003_*.sql       Incremental migration (leaderboard opt-out + buy-in edit policies)
+  migration_004_*.sql       Incremental migration (optional account profiles + avatar)
+  migration_005_*.sql       Incremental migration (created_by, for cross-device host recognition)
 ```
 
 ## 和最初方案的对应关系
@@ -109,13 +111,16 @@ supabase/
 
 ## 权限模型（这一版）
 
-现在是**房主每一次操作都要重新输入 PIN**，不会被记住：
+现在是**双重保护**：加买/离场/撤销/查看修改记录/结算这些按钮，**只有房主能看到**，而且房主每一次点击都要重新输入 PIN：
 
 - 开局时 PIN 是必填的（4 位数字），不设 PIN 不能开局。
-- 加买、离场、撤销、查看/修改加买记录、结算 —— 每一次点击都会弹出 PIN 输入框，只有这一次输对了才会执行这一次操作。
-- 这样即使多个人手机上都能看到这些按钮，没有 PIN 也点不动任何一步。
+- "房主"的认定：谁开的局，谁就是房主。分两种情况——
+  - 开局时**没登录账号**：靠这台设备本地记住一个开局令牌（`host_token`），只有这台设备能看到管理按钮，换设备就认不出来了。
+  - 开局时**登录了账号**：额外记录 `sessions.created_by`，这个账号登录到任何一台设备，都能被认成房主，不受限于某一台手机。
+- 除了房主之外，其他人打开这场牌局的看板，完全看不到 Records / + Rebuy / Cash out / Settle 这些按钮，只能看数据。
+- 房主看得到按钮，但**每次点击仍然要输 PIN** 才会真正执行——两层保护叠加。
 
-**已知的安全边界**：这套校验是纯前端拿输入值跟 `sessions.host_pin` 明文比对，PIN 本身会随着牌局数据一起被所有访问者的浏览器读到（在开发者工具的网络请求里能看到明文）。对朋友局这种信任场景够用，但不是银行级安全——不要用你其他账户也在用的密码当这个 PIN。
+**已知的安全边界**：PIN 校验是纯前端拿输入值跟 `sessions.host_pin` 明文比对，PIN 本身会随着牌局数据一起被所有访问者的浏览器读到（在开发者工具的网络请求里能看到明文）。房主身份的 `host_token` 同理也在公开的读取范围内。对朋友局这种信任场景够用，但不是银行级安全——不要用你其他账户也在用的密码当这个 PIN。
 
 ## 排行榜隐私开关
 
@@ -143,7 +148,8 @@ supabase/
 
 1. `supabase/migration_002_host_token.sql`（如果之前已经跑过可以跳过）
 2. `supabase/migration_003_leaderboard_opt_out_and_buyin_edits.sql`
-3. `supabase/migration_004_profiles.sql`（这次新加的，一定要跑）
+3. `supabase/migration_004_profiles.sql`
+4. `supabase/migration_005_host_recognition.sql`（这次新加的，一定要跑）
 
 ## 可选账号系统（这次新加）
 

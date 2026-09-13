@@ -66,10 +66,11 @@ export default function JoinPanel({
 
   const alreadySeated = remembered && seatedPlayerIds.includes(remembered.id);
 
-  async function join(playerId: string, name: string) {
+  async function join(playerId: string, name: string, avatar: string | null = null) {
     setBusy(true);
     await onJoined(playerId, name, countInLeaderboard);
     rememberPlayer(playerId, name);
+    setRemembered({ id: playerId, name, avatar, fromAccount: false });
     setBusy(false);
     setShowPicker(false);
   }
@@ -83,7 +84,7 @@ export default function JoinPanel({
     setBusy(true);
     const exactMatch = roster.find((p) => p.name.trim().toLowerCase() === name.toLowerCase());
     if (exactMatch) {
-      await join(exactMatch.id, exactMatch.name);
+      await join(exactMatch.id, exactMatch.name, exactMatch.avatar);
       setBusy(false);
       return;
     }
@@ -107,7 +108,7 @@ export default function JoinPanel({
           Welcome back, <span className="font-semibold">{remembered.name}</span>
         </p>
         <LeaderboardToggle value={countInLeaderboard} onChange={setCountInLeaderboard} />
-        <button className="btn-primary mt-3" disabled={busy} onClick={() => join(remembered.id, remembered.name)}>
+        <button className="btn-primary mt-3" disabled={busy} onClick={() => join(remembered.id, remembered.name, remembered.avatar)}>
           Confirm and take a seat
         </button>
         <button className="btn-ghost mt-2" onClick={() => setShowPicker(true)}>
@@ -118,7 +119,7 @@ export default function JoinPanel({
             roster={roster.filter((p) => !seatedPlayerIds.includes(p.id))}
             newName={newName}
             setNewName={setNewName}
-            onPick={(p) => join(p.id, p.name)}
+            onPick={(p) => join(p.id, p.name, p.avatar)}
             onNew={joinAsNew}
             onClose={() => setShowPicker(false)}
           />
@@ -145,7 +146,7 @@ export default function JoinPanel({
           roster={roster.filter((p) => !seatedPlayerIds.includes(p.id))}
           newName={newName}
           setNewName={setNewName}
-          onPick={(p) => join(p.id, p.name)}
+          onPick={(p) => join(p.id, p.name, p.avatar)}
           onNew={joinAsNew}
           onClose={() => setShowPicker(false)}
         />

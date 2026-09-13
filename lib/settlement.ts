@@ -33,6 +33,14 @@ export function simplifyDebts(nets: PlayerNet[]): Transfer[] {
 }
 
 export function fmt(n: number): string {
-  const rounded = Math.round(n);
-  return (rounded < 0 ? '-$' : '$') + Math.abs(rounded).toLocaleString();
+  const cents = Math.round(n * 100);
+  const sign = cents < 0 ? '-' : '';
+  const abs = Math.abs(cents);
+  const dollars = Math.floor(abs / 100);
+  const centsPart = abs % 100;
+  const dollarsDisplay = dollars.toLocaleString();
+  if (centsPart === 0) {
+    return `${sign}$${dollarsDisplay}`;
+  }
+  return `${sign}$${dollarsDisplay}.${String(centsPart).padStart(2, '0')}`;
 }
