@@ -15,7 +15,8 @@ import BuyInsModal from './BuyInsModal';
 import PlayerAvatar from './PlayerAvatar';
 import AddPlayerModal from './AddPlayerModal';
 import PinResetModal from './PinResetModal';
-import { getHostToken } from '@/lib/hostAuth';
+import TakeoverModal from './TakeoverModal';
+import { getHostToken, setHostToken } from '@/lib/hostAuth';
 import { isUnlocked, setUnlocked, unlockMinutesRemaining } from '@/lib/hostUnlock';
 
 type SeatWithName = Seat & { players: { name: string; avatar: string | null } | null };
@@ -36,6 +37,7 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   const [recordsFor, setRecordsFor] = useState<{ id: string; name: string } | null>(null);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [showPinReset, setShowPinReset] = useState(false);
+  const [showTakeover, setShowTakeover] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -236,6 +238,46 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
     load();
   }
 
+  async function takeover(currentPin: string, newPin: string) {
+    if (!session) return;
+    if (currentPin !== session.host_pin) {
+      fireToast('Incorrect current PIN');
+      return;
+    }
+    const {
+      data: { session: authSession },
+    } = await supabase.auth.getSession();
+    // A fresh host_token invalidates every other device's local copy, and
+    // clearing created_by revokes the previous host's account-wide access —
+    // this device (or account, if signed in) becomes the only recognized host.
+    const { data, error } = await supabase
+      .from('sessions')
+      .update({
+        host_pin: newPin,
+        host_token: crypto.randomUUID(),
+        created_by: authSession?.user?.id ?? null,
+      })
+      .eq('id', sessionId)
+      .select()
+      .single();
+    if (error || !data) {
+      fireToast(`Couldn't take over: ${error?.message ?? 'unknown error'}`);
+      return;
+    }
+    setHostToken(sessionId, data.host_token);
+    setIsHost(true);
+    setUnlocked(sessionId);
+    setUnlockTick((t) => t + 1);
+    setShowTakeover(false);
+    try {
+      await navigator.clipboard.writeText(newPin);
+      fireToast('You are now the host — new PIN copied to clipboard');
+    } catch {
+      fireToast('You are now the host');
+    }
+    load();
+  }
+
   async function voidSession() {
     const ok = window.confirm(
       "Void this session? It'll be closed without settling or affecting anyone's leaderboard stats. This can't be undone."
@@ -317,7 +359,10 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
         )}
         {seats.length > 0 && session.status === 'active' && !isHost && (
           <div className="text-xs mb-3 text-center" style={{ color: 'var(--text-dim)' }}>
-            Only the host can manage rebuys, cash-outs, and settlement
+            Only the host can manage rebuys, cash-outs, and settlement.{' '}
+            <button className="underline" onClick={() => setShowTakeover(true)} style={{ color: 'var(--text-dim)' }}>
+              Host gone? Take over
+            </button>
           </div>
         )}
         {seats.map((seat) => {
@@ -479,6 +524,10 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
       )}
 
       {showPinReset && <PinResetModal onConfirm={resetPin} onCancel={() => setShowPinReset(false)} />}
+
+      {showTakeover && (
+        <TakeoverModal onConfirm={takeover} onCancel={() => setShowTakeover(false)} />
+      )}
 
       {showAddPlayer && (
         <AddPlayerModal
