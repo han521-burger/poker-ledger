@@ -7,6 +7,7 @@ import { Session } from '@/lib/types';
 import { fmt } from '@/lib/settlement';
 
 const PAGE_SIZE = 50;
+const VOIDED_VISIBLE_DAYS = 7;
 
 export default function HistoryPage() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
@@ -14,10 +15,14 @@ export default function HistoryPage() {
   const [loadingMore, setLoadingMore] = useState(false);
 
   async function loadPage(offset: number) {
+    // Voided sessions only stay listed for a week (counted from the session
+    // date); the rows are kept, they just stop cluttering the history.
+    const voidedCutoff = new Date(Date.now() - VOIDED_VISIBLE_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const { data } = await supabase
       .from('sessions')
       .select('*')
       .eq('status', 'finished')
+      .or(`voided.eq.false,date.gte.${voidedCutoff}`)
       .order('date', { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1);
     const page = (data as Session[]) || [];
