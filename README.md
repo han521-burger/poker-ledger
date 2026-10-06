@@ -100,6 +100,7 @@ supabase/
   migration_004_*.sql       Incremental migration (optional account profiles + avatar)
   migration_005_*.sql       Incremental migration (created_by, for cross-device host recognition)
   migration_006_*.sql       Incremental migration (voided flag, for the "void this session" button)
+  migration_007_*.sql       Incremental migration (leaderboard computed from history instead of a running total)
 ```
 
 ## How this maps to the original plan
@@ -155,7 +156,8 @@ If yours is an **existing project that has already run schema.sql once** (like t
 2. `supabase/migration_003_leaderboard_opt_out_and_buyin_edits.sql`
 3. `supabase/migration_004_profiles.sql`
 4. `supabase/migration_005_host_recognition.sql`
-5. `supabase/migration_006_void_session.sql` (new this time — be sure to run it)
+5. `supabase/migration_006_void_session.sql`
+6. `supabase/migration_007_leaderboard_view.sql` (new this time — be sure to run it; it rebuilds the leaderboard from history so double-settled games stop counting twice)
 
 ## Optional account system (new this time)
 

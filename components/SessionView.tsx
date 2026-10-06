@@ -198,19 +198,9 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
 
   async function finishSession() {
     if (!session) return;
-    // Only aggregate into the persistent leaderboard for players who opted
-    // in for this session; everyone still shows up in the recap poster below.
-    for (const n of nets) {
-      if (!n.countInLeaderboard) continue;
-      const { error } = await supabase.rpc('bump_leaderboard', {
-        p_player_id: n.playerId,
-        p_net: n.net ?? 0,
-        p_won: (n.net ?? 0) > 0,
-      });
-      if (error) {
-        fireToast(`Leaderboard update failed for ${n.name}: ${error.message}`);
-      }
-    }
+    // The leaderboard is a view computed from finished, non-voided sessions,
+    // so marking the session finished is all that's needed — settling twice
+    // can't double-count.
     const { error } = await supabase.from('sessions').update({ status: 'finished' }).eq('id', sessionId);
     if (error) {
       fireToast(`Settle failed: ${error.message}`);

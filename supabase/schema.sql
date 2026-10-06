@@ -47,13 +47,31 @@ create table if not exists buy_ins (
   created_at timestamptz not null default now()
 );
 
--- 5. 排行榜聚合表（跨场次累计净胜/胜率）
-create table if not exists leaderboard (
-  player_id uuid primary key references players(id) on delete cascade,
-  games int not null default 0,
-  wins int not null default 0,
-  net_sum numeric not null default 0
-);
+-- 5. 排行榜视图（跨场次累计净胜/胜率）：直接从已结算、未作废的牌局实时算出，
+-- 不存累加值，所以重复点结算也不会多算一局。
+create or replace view leaderboard as
+with per_seat as (
+  select
+    st.player_id,
+    coalesce(st.cash_out, 0) - coalesce((
+      select sum(b.amount) from buy_ins b
+      where b.session_id = st.session_id and b.player_id = st.player_id
+    ), 0) as net
+  from seats st
+  join sessions s on s.id = st.session_id
+  where s.status = 'finished'
+    and s.voided = false
+    and st.count_in_leaderboard = true
+)
+select
+  player_id,
+  count(*)::int as games,
+  count(*) filter (where net > 0)::int as wins,
+  sum(net) as net_sum
+from per_seat
+group by player_id;
+
+grant select on leaderboard to anon, authenticated;
 
 -- 6. 账号资料表：把 Supabase 登录账号跟某一个玩家身份绑定起来。
 -- 这是可选的——没注册账号的人照样能靠点名字入座，跟以前一样。
@@ -65,21 +83,6 @@ create table if not exists profiles (
 
 create index if not exists idx_seats_session on seats(session_id);
 create index if not exists idx_buyins_session on buy_ins(session_id);
-
--- 结算一局时，原子性地把这一局每个玩家的净盈亏累加进排行榜
-create or replace function bump_leaderboard(p_player_id uuid, p_net numeric, p_won boolean)
-returns void as $$
-begin
-  insert into leaderboard (player_id, games, wins, net_sum)
-  values (p_player_id, 1, case when p_won then 1 else 0 end, p_net)
-  on conflict (player_id) do update
-    set games = leaderboard.games + 1,
-        wins = leaderboard.wins + case when p_won then 1 else 0 end,
-        net_sum = leaderboard.net_sum + p_net;
-end;
-$$ language plpgsql security definer;
-
-grant execute on function bump_leaderboard(uuid, numeric, boolean) to anon, authenticated;
 
 -- 开启 Realtime 广播（加买/离场时全桌手机自动跳动）
 alter publication supabase_realtime add table seats;
@@ -109,11 +112,6 @@ create policy "public read buyins" on buy_ins for select using (true);
 create policy "public insert buyins" on buy_ins for insert with check (true);
 create policy "public update buyins" on buy_ins for update using (true);
 create policy "public delete buyins" on buy_ins for delete using (true);
-
-alter table leaderboard enable row level security;
-create policy "public read leaderboard" on leaderboard for select using (true);
--- 注意：leaderboard 的写入只通过上面的 bump_leaderboard() 函数（security definer），
--- 不开放直接 insert/update 策略，避免有人绕过结算流程直接改榜。
 
 -- profiles 表只有本人能读写自己那一行，别人看不到、也改不了谁跟哪个账号绑定。
 alter table profiles enable row level security;
