@@ -10,10 +10,11 @@ export default function PinModal({
 }: {
   title?: string;
   subtitle?: string;
-  onConfirm: (pin: string) => void;
+  onConfirm: (pin: string) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const [pin, setPin] = useState('');
+  const [busy, setBusy] = useState(false);
 
   return (
     <div className="modal-overlay">
@@ -32,8 +33,16 @@ export default function PinModal({
           onChange={(e) => setPin(e.target.value)}
           placeholder="4-digit PIN"
         />
-        <button className="btn-primary mb-2" onClick={() => onConfirm(pin)}>
-          Confirm
+        <button
+          className="btn-primary mb-2"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            await onConfirm(pin);
+            setBusy(false);
+          }}
+        >
+          {busy ? 'Checking…' : 'Confirm'}
         </button>
         <button className="btn-ghost" onClick={onCancel}>
           Cancel

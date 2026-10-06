@@ -10,10 +10,11 @@ export default function RebuyModal({
 }: {
   playerName: string;
   defaultAmount: number;
-  onConfirm: (amount: number) => void;
+  onConfirm: (amount: number) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const [amount, setAmount] = useState(String(defaultAmount));
+  const [busy, setBusy] = useState(false);
 
   return (
     <div className="modal-overlay">
@@ -29,12 +30,16 @@ export default function RebuyModal({
         />
         <button
           className="btn-primary mb-2"
-          onClick={() => {
+          disabled={busy}
+          onClick={async () => {
             const v = parseFloat(amount);
-            if (v > 0) onConfirm(v);
+            if (!(v > 0)) return;
+            setBusy(true);
+            await onConfirm(v);
+            setBusy(false);
           }}
         >
-          Confirm rebuy
+          {busy ? 'Saving…' : 'Confirm rebuy'}
         </button>
         <button className="btn-ghost" onClick={onCancel}>
           Cancel

@@ -6,15 +6,16 @@ export default function TakeoverModal({
   onConfirm,
   onCancel,
 }: {
-  onConfirm: (currentPin: string, newPin: string) => void;
+  onConfirm: (currentPin: string, newPin: string) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  function submit() {
+  async function submit() {
     if (!/^\d{4}$/.test(currentPin)) {
       setError('Enter the current 4-digit PIN');
       return;
@@ -27,7 +28,9 @@ export default function TakeoverModal({
       setError("New PINs don't match");
       return;
     }
-    onConfirm(currentPin, newPin);
+    setBusy(true);
+    await onConfirm(currentPin, newPin);
+    setBusy(false);
   }
 
   return (
@@ -81,8 +84,8 @@ export default function TakeoverModal({
             {error}
           </div>
         )}
-        <button className="btn-primary mb-2" onClick={submit}>
-          Take over
+        <button className="btn-primary mb-2" disabled={busy} onClick={submit}>
+          {busy ? 'Saving…' : 'Take over'}
         </button>
         <button className="btn-ghost" onClick={onCancel}>
           Cancel

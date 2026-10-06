@@ -6,14 +6,15 @@ export default function PinResetModal({
   onConfirm,
   onCancel,
 }: {
-  onConfirm: (newPin: string) => void;
+  onConfirm: (newPin: string) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  function submit() {
+  async function submit() {
     if (!/^\d{4}$/.test(pin)) {
       setError('PIN must be 4 digits');
       return;
@@ -22,7 +23,9 @@ export default function PinResetModal({
       setError("PINs don't match");
       return;
     }
-    onConfirm(pin);
+    setBusy(true);
+    await onConfirm(pin);
+    setBusy(false);
   }
 
   return (
@@ -63,8 +66,8 @@ export default function PinResetModal({
             {error}
           </div>
         )}
-        <button className="btn-primary mb-2" onClick={submit}>
-          Save new PIN
+        <button className="btn-primary mb-2" disabled={busy} onClick={submit}>
+          {busy ? 'Saving…' : 'Save new PIN'}
         </button>
         <button className="btn-ghost" onClick={onCancel}>
           Cancel

@@ -125,6 +125,7 @@ export default function JoinPanel({
             onPick={(p) => join(p.id, p.name, p.avatar)}
             onNew={joinAsNew}
             onClose={() => setShowPicker(false)}
+            busy={busy}
           />
         )}
       </div>
@@ -152,6 +153,7 @@ export default function JoinPanel({
           onPick={(p) => join(p.id, p.name, p.avatar)}
           onNew={joinAsNew}
           onClose={() => setShowPicker(false)}
+          busy={busy}
         />
       )}
     </div>
@@ -174,6 +176,7 @@ function RosterPicker({
   onPick,
   onNew,
   onClose,
+  busy,
 }: {
   roster: Player[];
   newName: string;
@@ -181,6 +184,7 @@ function RosterPicker({
   onPick: (p: Player) => void;
   onNew: () => void;
   onClose: () => void;
+  busy: boolean;
 }) {
   const suggestions = useMemo(() => {
     const q = newName.trim().toLowerCase();
@@ -204,6 +208,7 @@ function RosterPicker({
           {roster.map((p) => (
             <button
               key={p.id}
+              disabled={busy}
               onClick={() => onPick(p)}
               className="px-3 py-1.5 rounded-full text-sm flex items-center gap-1.5"
               style={{ background: '#0d2b22', border: '1px solid var(--line)' }}
@@ -232,6 +237,7 @@ function RosterPicker({
               {suggestions.map((p) => (
                 <button
                   key={p.id}
+                  disabled={busy}
                   onClick={() => onPick(p)}
                   className="px-3 py-1.5 rounded-full text-sm"
                   style={{ background: 'rgba(199,154,75,0.15)', border: '1px solid #c79a4b', color: '#c79a4b' }}
@@ -242,7 +248,7 @@ function RosterPicker({
             </div>
           </div>
         )}
-        <button className="btn-primary mb-2" onClick={onNew}>
+        <button className="btn-primary mb-2" disabled={busy} onClick={onNew}>
           Add new player and take a seat
         </button>
         <button className="btn-ghost" onClick={onClose}>

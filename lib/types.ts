@@ -18,8 +18,6 @@ export type Session = {
   small_blind: number;
   big_blind: number;
   buy_in: number;
-  host_pin: string;
-  host_token: string;
   created_by: string | null;
   voided: boolean;
   status: 'active' | 'finished';

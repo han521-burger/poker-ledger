@@ -38,38 +38,32 @@ export default function HomePage() {
     }
     setPinError('');
     setCreating(true);
-    const {
-      data: { session: authSession },
-    } = await supabase.auth.getSession();
-    const { data, error } = await supabase
-      .from('sessions')
-      .insert({
-        small_blind: parseFloat(sb) || 1,
-        big_blind: parseFloat(bb) || 2,
-        buy_in: parseFloat(buyIn) || 200,
-        location: location || 'Unnamed location',
-        host_pin: pin,
-        created_by: authSession?.user?.id ?? null,
-        status: 'active',
-      })
-      .select()
-      .single();
-    setCreating(false);
-    if (error) {
-      alert(`Couldn't start the session: ${error.message}`);
+    // The PIN goes into a private table the page can't read back; the
+    // function returns this device's host token alongside the new id.
+    const { data, error } = await supabase.rpc('create_session', {
+      p_small_blind: parseFloat(sb) || 1,
+      p_big_blind: parseFloat(bb) || 2,
+      p_buy_in: parseFloat(buyIn) || 200,
+      p_location: location,
+      p_pin: pin,
+    });
+    if (error || !data) {
+      setCreating(false);
+      alert(`Couldn't start the session: ${error?.message ?? 'unknown error'}`);
       return;
     }
-    if (data) {
-      setHostToken(data.id, data.host_token);
-      try {
-        await navigator.clipboard.writeText(pin);
-        setToast('PIN copied to clipboard — paste it to share with a co-host');
-      } catch {
-        // Clipboard access can fail (permissions, insecure context); not
-        // worth blocking the flow over, the PIN is still shown on screen.
-      }
-      setTimeout(() => router.push(`/session/${data.id}`), 700);
+    // `creating` stays true until we navigate away, so a second tap can't
+    // start a duplicate session.
+    const created = data as { id: string; host_token: string };
+    setHostToken(created.id, created.host_token);
+    try {
+      await navigator.clipboard.writeText(pin);
+      setToast('PIN copied to clipboard — paste it to share with a co-host');
+    } catch {
+      // Clipboard access can fail (permissions, insecure context); not
+      // worth blocking the flow over, the PIN is still shown on screen.
     }
+    setTimeout(() => router.push(`/session/${created.id}`), 700);
   }
 
   return (

@@ -6,18 +6,34 @@ import { supabase } from '@/lib/supabase';
 import { Session } from '@/lib/types';
 import { fmt } from '@/lib/settlement';
 
+const PAGE_SIZE = 50;
+
 export default function HistoryPage() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  useEffect(() => {
-    supabase
+  async function loadPage(offset: number) {
+    const { data } = await supabase
       .from('sessions')
       .select('*')
       .eq('status', 'finished')
       .order('date', { ascending: false })
-      .limit(50)
-      .then(({ data }) => setSessions((data as Session[]) || []));
+      .range(offset, offset + PAGE_SIZE - 1);
+    const page = (data as Session[]) || [];
+    setSessions((prev) => (offset === 0 ? page : [...(prev || []), ...page]));
+    setHasMore(page.length === PAGE_SIZE);
+  }
+
+  useEffect(() => {
+    loadPage(0);
   }, []);
+
+  async function loadMore() {
+    setLoadingMore(true);
+    await loadPage(sessions?.length ?? 0);
+    setLoadingMore(false);
+  }
 
   return (
     <div>
@@ -65,6 +81,11 @@ export default function HistoryPage() {
               </span>
             </Link>
           ))}
+        {hasMore && (
+          <button className="btn-ghost mt-3" disabled={loadingMore} onClick={loadMore}>
+            {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
+        )}
       </div>
     </div>
   );

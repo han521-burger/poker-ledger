@@ -1,19 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { BuyIn } from '@/lib/types';
 import { fmt } from '@/lib/settlement';
 
 export default function BuyInsModal({
   playerName,
   buyIns,
-  onChanged,
+  onEdit,
+  onRemove,
   onClose,
 }: {
   playerName: string;
   buyIns: BuyIn[];
-  onChanged: () => void;
+  // Both resolve to true on success; the parent handles the PIN, the
+  // database call, error toasts, and reloading.
+  onEdit: (id: string, amount: number) => Promise<boolean>;
+  onRemove: (id: string) => Promise<boolean>;
   onClose: () => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -24,25 +27,16 @@ export default function BuyInsModal({
     const amount = parseFloat(editValue);
     if (!amount || amount <= 0) return;
     setBusy(true);
-    const { error } = await supabase.from('buy_ins').update({ amount }).eq('id', id);
+    const ok = await onEdit(id, amount);
     setBusy(false);
-    if (error) {
-      alert(`Couldn't update that amount: ${error.message}`);
-      return;
-    }
-    setEditingId(null);
-    onChanged();
+    if (ok) setEditingId(null);
   }
 
   async function removeEntry(id: string) {
+    if (!window.confirm('Void this buy-in entry?')) return;
     setBusy(true);
-    const { error } = await supabase.from('buy_ins').delete().eq('id', id);
+    await onRemove(id);
     setBusy(false);
-    if (error) {
-      alert(`Couldn't void that entry: ${error.message}`);
-      return;
-    }
-    onChanged();
   }
 
   const sorted = [...buyIns].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());

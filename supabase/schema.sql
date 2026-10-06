@@ -1,5 +1,6 @@
 -- 牌局账本 · 数据库结构
--- 在 Supabase 项目的 SQL Editor 里粘贴整段并 Run 一次即可。
+-- 在 Supabase 项目的 SQL Editor 里粘贴整段并 Run 一次，
+-- 然后再跑一次 migration_008_server_side_pin.sql（房主 PIN 私密表 + 所有写操作函数）。
 
 create extension if not exists "pgcrypto";
 
@@ -19,8 +20,6 @@ create table if not exists sessions (
   small_blind numeric not null default 1,
   big_blind numeric not null default 2,
   buy_in numeric not null default 200,
-  host_pin text,
-  host_token uuid not null default gen_random_uuid(),
   created_by uuid references auth.users(id) on delete set null,
   voided boolean not null default false,
   status text not null default 'active' check (status in ('active', 'finished'))
@@ -89,9 +88,8 @@ alter publication supabase_realtime add table seats;
 alter publication supabase_realtime add table buy_ins;
 alter publication supabase_realtime add table sessions;
 
--- 行级安全策略：这是家庭局/朋友局工具，不做账号登录系统，
--- 房间本身靠链接/二维码 + 房主 PIN 做轻量保护，
--- 所以这里对四张表放开匿名读写（用的是 anon public key，不是服务密钥）。
+-- 行级安全策略：四张表对所有人只读（玩家可以新建）。
+-- 牌局 / 座位 / 买入的所有写操作都走 migration_008 里的函数，由数据库校验房主 PIN。
 alter table players enable row level security;
 alter table sessions enable row level security;
 alter table seats enable row level security;
@@ -101,17 +99,10 @@ create policy "public read players" on players for select using (true);
 create policy "public insert players" on players for insert with check (true);
 
 create policy "public read sessions" on sessions for select using (true);
-create policy "public insert sessions" on sessions for insert with check (true);
-create policy "public update sessions" on sessions for update using (true);
 
 create policy "public read seats" on seats for select using (true);
-create policy "public insert seats" on seats for insert with check (true);
-create policy "public update seats" on seats for update using (true);
 
 create policy "public read buyins" on buy_ins for select using (true);
-create policy "public insert buyins" on buy_ins for insert with check (true);
-create policy "public update buyins" on buy_ins for update using (true);
-create policy "public delete buyins" on buy_ins for delete using (true);
 
 -- profiles 表只有本人能读写自己那一行，别人看不到、也改不了谁跟哪个账号绑定。
 alter table profiles enable row level security;

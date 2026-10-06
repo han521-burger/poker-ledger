@@ -14,7 +14,8 @@ Stack: Next.js 14 (App Router) + Supabase (database + realtime) + Vercel (hostin
 2. Once the project exists, go to **SQL Editor** → **New query** in the left menu.
 3. Open `supabase/schema.sql` in this repo, select all, paste it into the SQL Editor, and hit **Run** in the bottom right.
    - `Success. No rows returned` means the tables were created.
-   - This creates 5 tables (players / sessions / seats / buy_ins / leaderboard) and enables Realtime broadcasting.
+   - This creates the tables (players / sessions / seats / buy_ins), the leaderboard view, and enables Realtime broadcasting.
+   - Then open **New query** again, paste in `supabase/migration_008_server_side_pin.sql`, and **Run** it. This adds the private host-PIN table and the database functions every host action goes through.
 4. Go to **Project Settings → API** and note these two values — you'll paste them into Vercel next:
    - **Project URL** (looks like `https://xxxxx.supabase.co`)
    - **anon public key** (a long string)
@@ -101,6 +102,7 @@ supabase/
   migration_005_*.sql       Incremental migration (created_by, for cross-device host recognition)
   migration_006_*.sql       Incremental migration (voided flag, for the "void this session" button)
   migration_007_*.sql       Incremental migration (leaderboard computed from history instead of a running total)
+  migration_008_*.sql       Incremental migration (host PIN checked by the database, settled sessions locked)
 ```
 
 ## How this maps to the original plan
@@ -157,7 +159,10 @@ If yours is an **existing project that has already run schema.sql once** (like t
 3. `supabase/migration_004_profiles.sql`
 4. `supabase/migration_005_host_recognition.sql`
 5. `supabase/migration_006_void_session.sql`
-6. `supabase/migration_007_leaderboard_view.sql` (new this time — be sure to run it; it rebuilds the leaderboard from history so double-settled games stop counting twice)
+6. `supabase/migration_007_leaderboard_view.sql` (rebuilds the leaderboard from history so double-settled games stop counting twice)
+7. `supabase/migration_008_server_side_pin.sql` (new this time — moves the host PIN into a private table and routes every host action through database functions that check it; settled sessions can no longer be edited except by reopening them with the PIN)
+
+Run 007 and 008, then deploy the new code straight away — once 008 has run, the previous version of the site can no longer start sessions or do host actions. Don't do it in the middle of a live game.
 
 ## Optional account system (new this time)
 

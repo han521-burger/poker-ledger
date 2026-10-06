@@ -1,7 +1,7 @@
 // Identifies which device started a given session, so the rebuy / cash-out /
 // settle buttons are only shown to that device (or that logged-in account,
-// see the created_by check in SessionView). This is visibility only — the
-// PIN is still required on every click on top of this.
+// see is_host() in migration_008). This is visibility only — the database
+// still checks the PIN on every host action.
 const PREFIX = 'poker_ledger_host_token:';
 
 export function getHostToken(sessionId: string): string | null {

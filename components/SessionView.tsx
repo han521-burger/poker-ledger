@@ -17,7 +17,7 @@ import AddPlayerModal from './AddPlayerModal';
 import PinResetModal from './PinResetModal';
 import TakeoverModal from './TakeoverModal';
 import { getHostToken, setHostToken } from '@/lib/hostAuth';
-import { isUnlocked, setUnlocked, unlockMinutesRemaining } from '@/lib/hostUnlock';
+import { clearUnlocked, getUnlockedPin, isUnlocked, setUnlocked, unlockMinutesRemaining } from '@/lib/hostUnlock';
 
 type SeatWithName = Seat & { players: { name: string; avatar: string | null } | null };
 
@@ -29,10 +29,11 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   const [isHost, setIsHost] = useState(false);
   const [unlockTick, setUnlockTick] = useState(0); // bump to force a re-render when unlock state changes
 
-  // pendingAction holds the function to run once the PIN checks out (skipped
-  // entirely if the host already unlocked within the last 30 minutes).
-  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
-  const [rebuyFor, setRebuyFor] = useState<{ id: string; name: string } | null>(null);
+  // While the PIN modal is open, pinPrompt holds the resolver of the
+  // getPin() promise waiting on it.
+  const [pinPrompt, setPinPrompt] = useState<((pin: string | null) => void) | null>(null);
+  const [settling, setSettling] = useState(false);
+  const [rebuyFor, setRebuyFor] = useState<{ id: string; name: string; requestId: string } | null>(null);
   const [cashoutFor, setCashoutFor] = useState<{ id: string; name: string } | null>(null);
   const [recordsFor, setRecordsFor] = useState<{ id: string; name: string } | null>(null);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
@@ -67,25 +68,14 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
 
   // Visibility of the host-only buttons: this device created the session
   // (local token match) or this logged-in account created it (works across
-  // that account's devices). Either way, every click still re-prompts PIN.
+  // that account's devices). The token is checked by the database because
+  // it's no longer readable by the page; the PIN is still checked on every
+  // host action regardless.
   useEffect(() => {
-    async function resolveHost() {
-      if (!session) return;
-      const stored = getHostToken(sessionId);
-      if (stored && stored === session.host_token) {
-        setIsHost(true);
-        return;
-      }
-      if (session.created_by) {
-        const {
-          data: { session: authSession },
-        } = await supabase.auth.getSession();
-        setIsHost(!!authSession && authSession.user.id === session.created_by);
-        return;
-      }
-      setIsHost(false);
-    }
-    resolveHost();
+    if (!session) return;
+    supabase
+      .rpc('is_host', { p_session: sessionId, p_token: getHostToken(sessionId) })
+      .then(({ data, error }) => setIsHost(!error && data === true));
   }, [session, sessionId]);
 
   useEffect(() => {
@@ -126,97 +116,113 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
   const diff = (potCents - cashOutCents) / 100;
   const balanced = allCashedOut && potCents === cashOutCents;
 
-  function requirePin(action: () => void) {
-    if (isUnlocked(sessionId)) {
-      action();
+  // Resolves with the host PIN: straight away if this device unlocked within
+  // the last 30 minutes, otherwise once the PIN modal is confirmed (or null
+  // if it's cancelled).
+  function getPin(): Promise<string | null> {
+    const cached = getUnlockedPin(sessionId);
+    if (cached) return Promise.resolve(cached);
+    return new Promise((resolve) => setPinPrompt(() => resolve));
+  }
+
+  async function confirmPin(pin: string) {
+    const { data, error } = await supabase.rpc('verify_pin', { p_session: sessionId, p_pin: pin });
+    const msg = error?.message ?? (data as string | null);
+    if (msg) {
+      fireToast(msg);
       return;
     }
-    setPendingAction(() => action);
+    setUnlocked(sessionId, pin);
+    setUnlockTick((t) => t + 1);
+    const resolve = pinPrompt;
+    setPinPrompt(null);
+    resolve?.(pin);
+  }
+
+  function cancelPin() {
+    const resolve = pinPrompt;
+    setPinPrompt(null);
+    resolve?.(null);
+  }
+
+  // Opens a host-only screen once the PIN checks out.
+  async function asHost(open: () => void) {
+    if (await getPin()) open();
+  }
+
+  // Every host action is a database function that re-checks the PIN and the
+  // session state; it returns null on success or a message to show.
+  async function hostCall(fn: string, args: Record<string, unknown> = {}): Promise<boolean> {
+    const pin = await getPin();
+    if (!pin) return false;
+    const { data, error } = await supabase.rpc(fn, { p_session: sessionId, p_pin: pin, ...args });
+    const msg = error?.message ?? (data as string | null);
+    if (msg) {
+      if (msg === 'Incorrect PIN') {
+        clearUnlocked(sessionId);
+        setUnlockTick((t) => t + 1);
+      }
+      fireToast(msg);
+      return false;
+    }
+    load();
+    return true;
   }
 
   async function handleJoin(playerId: string, name: string, countInLeaderboard: boolean) {
-    const { error: seatErr } = await supabase.from('seats').insert({
-      session_id: sessionId,
-      player_id: playerId,
-      count_in_leaderboard: countInLeaderboard,
+    const { error } = await supabase.rpc('join_session', {
+      p_session: sessionId,
+      p_player: playerId,
+      p_count: countInLeaderboard,
     });
-    if (seatErr) {
-      fireToast(`Couldn't seat ${name}: ${seatErr.message}`);
-      return;
-    }
-    const { error: buyInErr } = await supabase.from('buy_ins').insert({
-      session_id: sessionId,
-      player_id: playerId,
-      amount: session?.buy_in || 0,
-    });
-    if (buyInErr) {
-      fireToast(`Seated, but the initial buy-in failed: ${buyInErr.message}`);
-      load();
+    if (error) {
+      fireToast(`Couldn't seat ${name}: ${error.message}`);
       return;
     }
     fireToast(`${name} took a seat`);
     load();
   }
 
-  async function doRebuy(playerId: string, amount: number) {
-    const { error } = await supabase.from('buy_ins').insert({ session_id: sessionId, player_id: playerId, amount });
-    setRebuyFor(null);
-    if (error) {
-      fireToast(`Rebuy failed: ${error.message}`);
-      return;
+  async function doRebuy(playerId: string, amount: number, requestId: string) {
+    // requestId is fixed when the rebuy modal opens, so a double-tap or a
+    // retry after a flaky connection still records this rebuy only once.
+    if (await hostCall('add_buy_in', { p_player: playerId, p_amount: amount, p_id: requestId })) {
+      setRebuyFor(null);
+      fireToast(`Rebuy ${fmt(amount)}`);
     }
-    fireToast(`Rebuy ${fmt(amount)}`);
-    load();
   }
 
   async function doCashout(playerId: string, amount: number) {
-    const { error } = await supabase
-      .from('seats')
-      .update({ cash_out: amount, has_left: true })
-      .eq('session_id', sessionId)
-      .eq('player_id', playerId);
-    setCashoutFor(null);
-    if (error) {
-      fireToast(`Cash out failed: ${error.message}`);
-      return;
-    }
-    load();
+    if (await hostCall('cash_out', { p_player: playerId, p_amount: amount })) setCashoutFor(null);
   }
 
   async function undoCashout(playerId: string) {
-    const { error } = await supabase
-      .from('seats')
-      .update({ cash_out: null, has_left: false })
-      .eq('session_id', sessionId)
-      .eq('player_id', playerId);
-    if (error) {
-      fireToast(`Undo failed: ${error.message}`);
-      return;
-    }
-    load();
+    await hostCall('undo_cash_out', { p_player: playerId });
   }
 
   async function finishSession() {
-    if (!session) return;
-    // The leaderboard is a view computed from finished, non-voided sessions,
-    // so marking the session finished is all that's needed — settling twice
-    // can't double-count.
-    const { error } = await supabase.from('sessions').update({ status: 'finished' }).eq('id', sessionId);
-    if (error) {
-      fireToast(`Settle failed: ${error.message}`);
-      return;
-    }
-    setShowResult(true);
-    load();
+    setSettling(true);
+    const ok = await hostCall('finish_session');
+    setSettling(false);
+    if (ok) setShowResult(true);
+  }
+
+  async function reopenSession() {
+    if (!window.confirm('Reopen this session? It drops off the leaderboard until you settle it again.')) return;
+    if (await hostCall('reopen_session')) fireToast('Session reopened');
   }
 
   async function resetPin(newPin: string) {
-    const { error } = await supabase.from('sessions').update({ host_pin: newPin }).eq('id', sessionId);
+    const { error } = await supabase.rpc('reset_pin', {
+      p_session: sessionId,
+      p_token: getHostToken(sessionId),
+      p_new_pin: newPin,
+    });
     if (error) {
       fireToast(`Couldn't update PIN: ${error.message}`);
       return;
     }
-    setUnlocked(sessionId);
+    setUnlocked(sessionId, newPin);
     setUnlockTick((t) => t + 1);
     setShowPinReset(false);
     try {
@@ -225,38 +231,25 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
     } catch {
       fireToast('PIN updated');
     }
-    load();
   }
 
   async function takeover(currentPin: string, newPin: string) {
-    if (!session) return;
-    if (currentPin !== session.host_pin) {
-      fireToast('Incorrect current PIN');
+    // A fresh host token invalidates every other device's local copy, and
+    // created_by moves to this account (if signed in) — this device becomes
+    // the only recognized host.
+    const { data, error } = await supabase.rpc('takeover', {
+      p_session: sessionId,
+      p_current_pin: currentPin,
+      p_new_pin: newPin,
+    });
+    const result = data as { error?: string; host_token?: string } | null;
+    if (error || !result?.host_token) {
+      fireToast(`Couldn't take over: ${error?.message ?? result?.error ?? 'unknown error'}`);
       return;
     }
-    const {
-      data: { session: authSession },
-    } = await supabase.auth.getSession();
-    // A fresh host_token invalidates every other device's local copy, and
-    // clearing created_by revokes the previous host's account-wide access —
-    // this device (or account, if signed in) becomes the only recognized host.
-    const { data, error } = await supabase
-      .from('sessions')
-      .update({
-        host_pin: newPin,
-        host_token: crypto.randomUUID(),
-        created_by: authSession?.user?.id ?? null,
-      })
-      .eq('id', sessionId)
-      .select()
-      .single();
-    if (error || !data) {
-      fireToast(`Couldn't take over: ${error?.message ?? 'unknown error'}`);
-      return;
-    }
-    setHostToken(sessionId, data.host_token);
+    setHostToken(sessionId, result.host_token);
     setIsHost(true);
-    setUnlocked(sessionId);
+    setUnlocked(sessionId, newPin);
     setUnlockTick((t) => t + 1);
     setShowTakeover(false);
     try {
@@ -273,13 +266,7 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
       "Void this session? It'll be closed without settling or affecting anyone's leaderboard stats. This can't be undone."
     );
     if (!ok) return;
-    const { error } = await supabase.from('sessions').update({ status: 'finished', voided: true }).eq('id', sessionId);
-    if (error) {
-      fireToast(`Couldn't void session: ${error.message}`);
-      return;
-    }
-    fireToast('Session voided');
-    load();
+    if (await hostCall('void_session')) fireToast('Session voided');
   }
 
   if (loading) return <div className="text-center py-16 text-sm" style={{ color: 'var(--text-dim)' }}>Loading…</div>;
@@ -327,7 +314,7 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
                 🔒 Enter PIN on your next action to unlock for 30 min
               </div>
             )}
-            <button className="btn-ghost mt-3" onClick={() => requirePin(() => setShowAddPlayer(true))}>
+            <button className="btn-ghost mt-3" onClick={() => asHost(() => setShowAddPlayer(true))}>
               + Add player
             </button>
             <button
@@ -388,21 +375,23 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
               </div>
               {isHost && session.status === 'active' && (
                 <div className="flex gap-1.5 flex-wrap justify-end">
-                  <button className="btn-small" onClick={() => requirePin(() => setRecordsFor({ id: seat.player_id, name: n.name }))}>
+                  <button className="btn-small" onClick={() => asHost(() => setRecordsFor({ id: seat.player_id, name: n.name }))}>
                     Records
                   </button>
                   {!seat.has_left && (
-                    <button className="btn-small" onClick={() => requirePin(() => setRebuyFor({ id: seat.player_id, name: n.name }))}>
+                    <button className="btn-small" onClick={() =>
+                        asHost(() => setRebuyFor({ id: seat.player_id, name: n.name, requestId: crypto.randomUUID() }))
+                      }>
                       + Rebuy
                     </button>
                   )}
                   {!seat.has_left && (
-                    <button className="btn-small" onClick={() => requirePin(() => setCashoutFor({ id: seat.player_id, name: n.name }))}>
+                    <button className="btn-small" onClick={() => asHost(() => setCashoutFor({ id: seat.player_id, name: n.name }))}>
                       Cash out
                     </button>
                   )}
                   {seat.has_left && (
-                    <button className="btn-small" onClick={() => requirePin(() => undoCashout(seat.player_id))}>
+                    <button className="btn-small" onClick={() => undoCashout(seat.player_id)}>
                       Undo
                     </button>
                   )}
@@ -439,15 +428,15 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
                 : `Off by ${fmt(diff)} — double check the log`
               : `Waiting on everyone to cash out (${seats.filter((s) => s.cash_out == null).length} left)`}
           </div>
-          <button className="btn-primary" disabled={!balanced} onClick={() => requirePin(finishSession)}>
-            Settle and generate recap
+          <button className="btn-primary" disabled={!balanced || settling} onClick={finishSession}>
+            {settling ? 'Settling…' : 'Settle and generate recap'}
           </button>
         </div>
       )}
 
       {isHost && session.status === 'active' && (
         <div className="text-center mb-4">
-          <button className="text-xs underline" style={{ color: 'var(--text-dim)' }} onClick={() => requirePin(voidSession)}>
+          <button className="text-xs underline" style={{ color: 'var(--text-dim)' }} onClick={voidSession}>
             Made a mistake? Void this session instead
           </button>
         </div>
@@ -465,33 +454,29 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
               <button className="btn-primary" onClick={() => setShowResult(true)}>
                 View recap
               </button>
+              {isHost ? (
+                <button className="text-xs mt-3 underline" style={{ color: 'var(--text-dim)' }} onClick={reopenSession}>
+                  Settled by mistake? Reopen this session
+                </button>
+              ) : (
+                <button
+                  className="text-xs mt-3 underline"
+                  style={{ color: 'var(--text-dim)' }}
+                  onClick={() => setShowTakeover(true)}
+                >
+                  Host gone? Take over
+                </button>
+              )}
             </>
           )}
         </div>
-      )}
-
-      {pendingAction && (
-        <PinModal
-          onConfirm={(pin) => {
-            if (pin === session.host_pin) {
-              setUnlocked(sessionId);
-              setUnlockTick((t) => t + 1);
-              const action = pendingAction;
-              setPendingAction(null);
-              action();
-            } else {
-              fireToast('Incorrect PIN');
-            }
-          }}
-          onCancel={() => setPendingAction(null)}
-        />
       )}
 
       {rebuyFor && (
         <RebuyModal
           playerName={rebuyFor.name}
           defaultAmount={session.buy_in}
-          onConfirm={(amt) => doRebuy(rebuyFor.id, amt)}
+          onConfirm={(amt) => doRebuy(rebuyFor.id, amt, rebuyFor.requestId)}
           onCancel={() => setRebuyFor(null)}
         />
       )}
@@ -508,7 +493,8 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
         <BuyInsModal
           playerName={recordsFor.name}
           buyIns={buyIns.filter((b) => b.player_id === recordsFor.id)}
-          onChanged={load}
+          onEdit={(id, amount) => hostCall('edit_buy_in', { p_buy_in: id, p_amount: amount })}
+          onRemove={(id) => hostCall('delete_buy_in', { p_buy_in: id })}
           onClose={() => setRecordsFor(null)}
         />
       )}
@@ -537,6 +523,10 @@ export default function SessionView({ sessionId }: { sessionId: string }) {
           onClose={() => setShowResult(false)}
         />
       )}
+
+      {/* Rendered after the other modals so it sits on top if the 30-minute
+          unlock lapses while one of them is open. */}
+      {pinPrompt && <PinModal onConfirm={confirmPin} onCancel={cancelPin} />}
 
       {toast && (
         <div

@@ -8,10 +8,11 @@ export default function CashoutModal({
   onCancel,
 }: {
   playerName: string;
-  onConfirm: (amount: number) => void;
+  onConfirm: (amount: number) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const [amount, setAmount] = useState('');
+  const [busy, setBusy] = useState(false);
 
   return (
     <div className="modal-overlay">
@@ -27,12 +28,16 @@ export default function CashoutModal({
         />
         <button
           className="btn-primary mb-2"
-          onClick={() => {
+          disabled={busy}
+          onClick={async () => {
             const v = parseFloat(amount);
-            if (!isNaN(v) && v >= 0) onConfirm(v);
+            if (isNaN(v) || v < 0) return;
+            setBusy(true);
+            await onConfirm(v);
+            setBusy(false);
           }}
         >
-          Confirm cash out
+          {busy ? 'Saving…' : 'Confirm cash out'}
         </button>
         <button className="btn-ghost" onClick={onCancel}>
           Cancel
